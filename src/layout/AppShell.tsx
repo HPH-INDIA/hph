@@ -4,12 +4,11 @@ import { NavLink, Outlet } from "react-router-dom";
 import { HphLogo } from "@/components/brand/HphLogo";
 import { useAuth } from "@/features/auth/useAuth";
 import { useLogoutHandler } from "@/features/auth/useLogoutHandler";
-import { SWAGGER_URL } from "@/lib/env";
 
 import { NAV_ITEMS } from "./navConfig";
 import { SessionFooter } from "./SessionFooter";
 
-type IconName = (typeof NAV_ITEMS)[number]["icon"] | "api" | "logout" | "pin" | "unpin";
+type IconName = (typeof NAV_ITEMS)[number]["icon"] | "logout" | "pin" | "unpin";
 
 function SidebarIcon({ name }: { name: IconName }) {
   const paths: Record<IconName, ReactNode> = {
@@ -19,7 +18,6 @@ function SidebarIcon({ name }: { name: IconName }) {
     team: <><circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" /><path d="M3.5 20c.4-4 2.3-6 5.5-6s5.1 2 5.5 6" /><path d="M14 15c3.6-.8 6 1 6.5 4" /></>,
     users: <><circle cx="12" cy="8" r="4" /><path d="M4.5 21c.5-5 3-7.5 7.5-7.5s7 2.5 7.5 7.5" /></>,
     roles: <><path d="M12 3 4.5 6v5c0 4.8 2.9 8.2 7.5 10 4.6-1.8 7.5-5.2 7.5-10V6L12 3Z" /><path d="m9 12 2 2 4-4" /></>,
-    api: <><path d="M8 7H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" /><path d="M13 3h8v8" /><path d="m11 13 10-10" /></>,
     logout: <><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5" /><path d="M14 8l4 4-4 4" /><path d="M8 12h10" /></>,
     pin: <><path d="m15 4 5 5-3 1-4 4-1 5-2-2-4 4-1-1 4-4-2-2 5-1 4-4 1-3Z" /></>,
     unpin: <><path d="m15 4 5 5-3 1-4 4-1 5-2-2-4 4-1-1 4-4-2-2 5-1 4-4 1-3Z" /><path d="M3 3l18 18" /></>,
@@ -116,20 +114,6 @@ export function AppShell() {
               <p className={`px-2 py-2 text-xs text-white/55 ${isExpanded ? "block" : "hidden"}`}>No sections available for your role.</p>
             ) : navLinks(isExpanded)}
           </nav>
-
-          <div className="px-3 py-2">
-            <a
-              href={SWAGGER_URL}
-              target="_blank"
-              rel="noreferrer"
-              title={isExpanded ? undefined : "API Docs (Swagger)"}
-              aria-label="API Docs (Swagger)"
-              className={`flex h-10 items-center rounded-lg text-xs text-white/50 transition-colors hover:bg-white/10 hover:text-white ${isExpanded ? "gap-3 px-3" : "justify-center"}`}
-            >
-              <SidebarIcon name="api" />
-              <span className={`whitespace-nowrap transition-all duration-200 ${isExpanded ? "max-w-44 opacity-100" : "max-w-0 overflow-hidden opacity-0"}`}>API Docs (Swagger)</span>
-            </a>
-          </div>
 
           <div className="border-t border-white/10 px-3 py-3">
           <NavLink

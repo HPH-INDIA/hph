@@ -177,6 +177,7 @@ export interface LoginHoursUploadBatch {
 }
 
 export interface LoginHourRecord {
+  projectName?: string | null;
   id: number;
   batchId: number;
   userId: number;
@@ -197,6 +198,8 @@ export interface LoginHourRecord {
 }
 
 export interface LoginHourRecordQuery extends PaginationQuery {
+  userIds?: number[];
+  projectId?: number | null;
   from?: string | null;
   to?: string | null;
   userId?: number | null;
@@ -205,6 +208,7 @@ export interface LoginHourRecordQuery extends PaginationQuery {
 }
 
 export interface LoginHourFilterOption {
+  projectId?: number | null;
   id: number;
   label: string;
 }
@@ -212,6 +216,7 @@ export interface LoginHourFilterOption {
 export interface LoginHourRecordPage extends PaginatedResult<LoginHourRecord> {
   averageInsideMinutes: number | null;
   filterOptions: {
+    projects?: LoginHourFilterOption[];
     users: LoginHourFilterOption[];
     leads: LoginHourFilterOption[];
     cohorts: LoginHourFilterOption[];

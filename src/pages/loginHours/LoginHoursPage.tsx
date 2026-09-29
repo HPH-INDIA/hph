@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { getErrorMessage } from "@/api/apiError";
 import {
@@ -15,7 +15,8 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews
 import { useAuth } from "@/features/auth/useAuth";
 
 interface LoginHoursFilters {
-  userId: number | null;
+  userIds: number[];
+  projectId: number | null;
   leadId: number | null;
   cohortId: number | null;
   fromDate: string;
@@ -58,27 +59,32 @@ function FilterIcon() {
 export function LoginHoursPage() {
   const { user, canWriteFeature } = useAuth();
   const isManager = user?.role.roleType === "manager";
-  const isLead = user?.role.roleType === "lead";
-  const canSelectUser = isManager || isLead;
+  const isAdmin = ["admin", "super_admin"].includes(user?.role.roleType ?? "");
+  const canSelectUser = Boolean(user);
   const canFilter = Boolean(user);
-  const canUpload = isManager && canWriteFeature("login_hours");
-  const scopeDescription = isManager
-    ? "View login hours for your reporting team and upload attendance workbooks."
+  const canUpload = canWriteFeature("login_hours");
+  const scopeDescription = isAdmin
+    ? "View day-wise attendance across all projects."
+    : isManager
+    ? "View day-wise attendance for your project."
     : user?.role.roleType === "lead"
       ? "View your login hours and the login hours of your direct team members."
-      : "View your login hours.";
+      : "View day-wise attendance for your team.";
   const [file, setFile] = useState<File | null>(null);
   const [lastResult, setLastResult] = useState<LoginHoursUploadBatch | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [page, setPage] = useState(1);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [userSearch, setUserSearch] = useState("");
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
   const [selectedCohortId, setSelectedCohortId] = useState<number | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftFilters, setDraftFilters] = useState<LoginHoursFilters>({
-    userId: null,
+    userIds: [],
+    projectId: null,
     leadId: null,
     cohortId: null,
     fromDate: "",
@@ -90,15 +96,16 @@ export function LoginHoursPage() {
     pageSize: 25,
     from: fromDate || null,
     to: toDate || null,
-    userId: selectedUserId,
+    userIds: selectedUserIds,
+    projectId: selectedProjectId,
     leadId: selectedLeadId,
     cohortId: selectedCohortId,
   });
-  const uploads = useListLoginHoursUploadsQuery(undefined, { skip: !isManager });
+  const uploads = useListLoginHoursUploadsQuery(undefined, { skip: !canUpload });
   const filterOptions = records.data?.filterOptions;
 
   const activeFilterCount = canFilter
-    ? Number(canSelectUser && selectedUserId !== null) +
+    ? Number(selectedUserIds.length > 0) + Number(selectedProjectId !== null) +
       Number(isManager && selectedLeadId !== null) +
       Number(isManager && selectedCohortId !== null) +
       Number(Boolean(fromDate)) +
@@ -107,7 +114,8 @@ export function LoginHoursPage() {
 
   const openFilters = () => {
     setDraftFilters({
-      userId: canSelectUser ? selectedUserId : null,
+      userIds: selectedUserIds,
+      projectId: selectedProjectId,
       leadId: isManager ? selectedLeadId : null,
       cohortId: isManager ? selectedCohortId : null,
       fromDate,
@@ -117,7 +125,8 @@ export function LoginHoursPage() {
   };
 
   const applyFilters = () => {
-    setSelectedUserId(canSelectUser ? draftFilters.userId : null);
+    setSelectedUserIds(draftFilters.userIds);
+    setSelectedProjectId(draftFilters.projectId);
     setSelectedLeadId(isManager ? draftFilters.leadId : null);
     setSelectedCohortId(isManager ? draftFilters.cohortId : null);
     setFromDate(draftFilters.fromDate);
@@ -127,7 +136,8 @@ export function LoginHoursPage() {
   };
 
   const resetDraftFilters = () => {
-    setDraftFilters({ userId: null, leadId: null, cohortId: null, fromDate: "", toDate: "" });
+    setDraftFilters({ userIds: [], projectId: null, leadId: null, cohortId: null, fromDate: "", toDate: "" });
+    setUserSearch("");
   };
 
   const handleUpload = async () => {
@@ -193,21 +203,32 @@ export function LoginHoursPage() {
         open={canFilter && filtersOpen}
         onClose={() => setFiltersOpen(false)}
         title="Login hours filters"
-        description={isManager ? "Filter attendance by user, reporting lead, cohort, or date range." : isLead ? "Filter attendance for yourself or a direct team member, with an optional date range." : "Filter your attendance by date range."}
+        description="Select users and a date range to review daily attendance."
         widthClass="max-w-md"
       >
         <div className="flex min-h-full flex-col gap-5">
+          {isAdmin && <LoginHoursFilter label="Project">
+            <select className={inputClasses} value={draftFilters.projectId ?? "ALL"} onChange={(event) => setDraftFilters((current) => ({ ...current, projectId: event.target.value === "ALL" ? null : Number(event.target.value), userIds: [] }))}>
+              <option value="ALL">All projects</option>
+              {filterOptions?.projects?.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </LoginHoursFilter>}
           {canSelectUser && (
-            <LoginHoursFilter label="User">
-              <select
-                className={inputClasses}
-                value={draftFilters.userId ?? "ALL"}
-                onChange={(event) => setDraftFilters((current) => ({ ...current, userId: event.target.value === "ALL" ? null : Number(event.target.value) }))}
-              >
-                <option value="ALL">All users</option>
-                {(filterOptions?.users ?? []).map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-              </select>
-            </LoginHoursFilter>
+            <div className="text-sm">
+              <p className="mb-1 text-xs font-medium text-content-secondary">Users</p>
+              <details className="rounded-md border border-border bg-surface p-3">
+                <summary className="cursor-pointer">{draftFilters.userIds.length ? `${draftFilters.userIds.length} users selected` : "All users"}</summary>
+                <input aria-label="Search users" className={`${inputClasses} mt-3`} placeholder="Search by name" value={userSearch} onChange={(event) => setUserSearch(event.target.value)} />
+                <button type="button" className="my-2 text-brand-700 underline" onClick={() => setDraftFilters((current) => ({ ...current, userIds: [] }))}>All users / clear selection</button>
+                <div className="max-h-60 overflow-y-auto">
+                  {(filterOptions?.users ?? []).filter((option) => (!draftFilters.projectId || option.projectId === draftFilters.projectId) && option.label.toLowerCase().includes(userSearch.toLowerCase())).map((option) => (
+                    <label key={option.id} className="flex items-center gap-2 py-2">
+                      <input type="checkbox" checked={draftFilters.userIds.includes(option.id)} onChange={(event) => setDraftFilters((current) => ({ ...current, userIds: event.target.checked ? [...current.userIds, option.id] : current.userIds.filter((id) => id !== option.id) }))} />{option.label}
+                    </label>
+                  ))}
+                </div>
+              </details>
+            </div>
           )}
 
           {isManager && (
@@ -260,7 +281,7 @@ export function LoginHoursPage() {
             <Button type="button" variant="ghost" onClick={resetDraftFilters}>Reset all</Button>
             <div className="flex gap-2">
               <Button type="button" variant="secondary" onClick={() => setFiltersOpen(false)}>Cancel</Button>
-              <Button type="button" onClick={applyFilters}>Apply filters</Button>
+              <Button type="button" disabled={Boolean(draftFilters.fromDate && draftFilters.toDate && draftFilters.fromDate > draftFilters.toDate)} onClick={applyFilters}>Apply filters</Button>
             </div>
           </div>
         </div>
@@ -300,7 +321,7 @@ export function LoginHoursPage() {
                 <thead className="bg-surface-muted text-xs uppercase tracking-wide text-content-muted">
                   <tr>
                     <th className="px-4 py-3 font-medium">Date</th>
-                    <th className="px-4 py-3 font-medium">Coder</th>
+                    <th className="px-4 py-3 font-medium">User / project</th>
                     <th className="px-4 py-3 font-medium">First in</th>
                     <th className="px-4 py-3 font-medium">Last out</th>
                     <th className="px-4 py-3 font-medium">Inside</th>
@@ -310,11 +331,14 @@ export function LoginHoursPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {records.data.items.map((record) => (
-                    <tr key={record.id}>
+                  {records.data.items.map((record, index) => (
+                    <Fragment key={record.id}>
+                    {(index === 0 || records.data.items[index - 1].date !== record.date) && <tr className="bg-brand-50"><th colSpan={8} className="px-4 py-3 text-left font-semibold text-brand-800">{new Date(`${record.date}T00:00:00`).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</th></tr>}
+                    <tr>
                       <td className="px-4 py-3 text-content-secondary">{record.date}</td>
                       <td className="px-4 py-3">
                         <div className="font-medium text-content-primary">{record.userName}</div>
+                        {record.projectName && <div className="text-xs text-content-muted">{record.projectName}</div>}
                         {record.employeeNameRaw !== record.userName && <div className="text-xs text-content-muted">Source: {record.employeeNameRaw}</div>}
                       </td>
                       <td className="px-4 py-3 text-content-secondary">{record.firstIn?.slice(0, 5) ?? "—"}</td>
@@ -324,6 +348,7 @@ export function LoginHoursPage() {
                       <td className="px-4 py-3 text-content-secondary">{formatMinutes(record.totalSpanMinutes)}</td>
                       <td className="px-4 py-3 text-content-secondary">{record.status ?? "—"}{record.anomalies ? ` · ${record.anomalies} anomal${record.anomalies === 1 ? "y" : "ies"}` : ""}</td>
                     </tr>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -339,7 +364,7 @@ export function LoginHoursPage() {
         )}
       </section>
 
-      {isManager && !uploads.isLoading && !uploads.error && (uploads.data?.length ?? 0) > 0 && (
+      {canUpload && !uploads.isLoading && !uploads.error && (uploads.data?.length ?? 0) > 0 && (
         <p className="text-xs text-content-muted">{uploads.data?.length} upload batch(es) retained in the audit history.</p>
       )}
     </div>

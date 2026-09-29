@@ -19,6 +19,18 @@ import { RequireAuth } from "./RequireAuth";
 import { RequireFirstLoginComplete } from "./RequireFirstLoginComplete";
 import { RequireFeature } from "./RequireFeature";
 import { RequireRoleType } from "./RequireRoleType";
+import { useAuth } from "@/features/auth/useAuth";
+import { NAV_ITEMS } from "@/layout/navConfig";
+
+function HomePage() {
+  const { user, hasFeature } = useAuth();
+  if (!hasFeature("dashboard")) {
+    const destination = NAV_ITEMS.find((item) => item.to !== "/" && hasFeature(item.feature)
+      && (!item.roleTypes || item.roleTypes.includes(user?.role.roleType ?? "employee")));
+    if (destination) return <Navigate to={destination.to} replace />;
+  }
+  return <RequireFeature codename="dashboard"><DashboardPage /></RequireFeature>;
+}
 
 export function AppRoutes() {
   return (
@@ -34,9 +46,7 @@ export function AppRoutes() {
             <Route
               path="/"
               element={
-                <RequireFeature codename="dashboard">
-                  <DashboardPage />
-                </RequireFeature>
+                <HomePage />
               }
             />
             <Route path="/account" element={<AccountSessionsPage />} />
