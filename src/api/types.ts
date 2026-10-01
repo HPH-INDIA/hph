@@ -430,6 +430,23 @@ export type ManualDailyRecordStatus = "pending" | "approved" | "rejected";
 
 export const MANUAL_DAILY_RECORD_MAX_HOURS = 10;
 
+export const MANUAL_MEETING_TYPES = [
+  "Assessment",
+  "One-O-One",
+  "Meeting",
+  "Training",
+  "Huddle",
+  "PKT",
+  "Others",
+] as const;
+
+export type ManualMeetingType = (typeof MANUAL_MEETING_TYPES)[number];
+
+export interface ManualMeeting {
+  type: ManualMeetingType | null;
+  hours: string;
+}
+
 // GET /manual-daily-records, POST /manual-daily-records response
 // (ManualDailyRecordSchema). The four hour fields come back as strings
 // (as_string=True on the backend's Decimal field).
@@ -444,12 +461,54 @@ export interface ManualDailyRecord {
   noInventoryIdleTimeHours: string;
   leaveHours: string;
   meetingEngagementHours: string;
+  meetingType: ManualMeetingType | null;
+  meetings?: ManualMeeting[];
   status: ManualDailyRecordStatus;
   reviewedById: number | null;
   reviewedAt: string | null;
   rejectionReason: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ManualTeamUser {
+  id: number;
+  firstName: string;
+  lastName: string;
+  empId: string;
+}
+
+export interface ManualTeamDayEntry {
+  user: ManualTeamUser;
+  record: ManualDailyRecord | null;
+}
+
+export interface ManualTeamDayGroup {
+  lead: ManualTeamUser | null;
+  leadRecord: ManualDailyRecord | null;
+  coders: ManualTeamDayEntry[];
+}
+
+export interface ManualTeamDay {
+  date: string;
+  teams: ManualTeamDayGroup[];
+}
+
+export interface ManualTeamRangeEntry {
+  user: ManualTeamUser;
+  records: ManualDailyRecord[];
+}
+
+export interface ManualTeamRangeGroup {
+  lead: ManualTeamUser | null;
+  leadRecords: ManualDailyRecord[];
+  coders: ManualTeamRangeEntry[];
+}
+
+export interface ManualTeamRange {
+  fromDate: string;
+  toDate: string;
+  teams: ManualTeamRangeGroup[];
 }
 
 // POST /manual-daily-records body (ManualDailyRecordUpsertSchema) — no user
@@ -462,6 +521,8 @@ export interface ManualDailyRecordUpsertPayload {
   noInventoryIdleTimeHours: number;
   leaveHours: number;
   meetingEngagementHours: number;
+  meetingType?: ManualMeetingType | null;
+  meetings?: { type: ManualMeetingType; hours: number }[];
 }
 
 export interface ManualBulkUploadPayload {

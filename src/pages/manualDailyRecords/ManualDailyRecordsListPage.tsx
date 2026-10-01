@@ -14,6 +14,7 @@ import { ManualRecordStatusIndicator } from "@/components/ui/ManualRecordStatusI
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { MultiUserSelect } from "@/components/ui/UserSelect";
 import { useAuth } from "@/features/auth/useAuth";
+import { formatManualMeetings } from "@/pages/reports/manualReportSummary";
 
 const STATUS_TABS: { key: ManualDailyRecordStatus | "all"; label: string }[] = [
   { key: "pending", label: "Pending" },
@@ -23,8 +24,8 @@ const STATUS_TABS: { key: ManualDailyRecordStatus | "all"; label: string }[] = [
 ];
 
 export function ManualDailyRecordsListPage() {
-  const { hasFeature, hasRoleType } = useAuth();
-  const canReview = hasFeature("reports", "write") && hasRoleType("manager");
+  const { user, hasFeature, hasRoleType } = useAuth();
+  const canReview = hasFeature("reports", "write") && hasRoleType("lead");
 
   const [statusTab, setStatusTab] = useState<ManualDailyRecordStatus | "all">("pending");
   const [fromDate, setFromDate] = useState("");
@@ -68,8 +69,8 @@ export function ManualDailyRecordsListPage() {
         <h1 className="text-lg font-semibold text-content-primary">Daily records</h1>
         <p className="text-sm text-content-muted">
           {canReview
-            ? "Review and decide on everyone's submitted daily records."
-            : "Everyone's submitted daily records."}
+            ? "Review and decide on your coders’ submitted daily records."
+            : "Submitted daily records available to you."}
         </p>
       </div>
 
@@ -132,6 +133,7 @@ export function ManualDailyRecordsListPage() {
                 <th className="px-4 py-3 font-medium">Idle</th>
                 <th className="px-4 py-3 font-medium">Leave</th>
                 <th className="px-4 py-3 font-medium">Meeting</th>
+                    <th className="px-4 py-3 font-medium">Meetings</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 {canReview && <th className="px-4 py-3 font-medium" />}
               </tr>
@@ -148,6 +150,7 @@ export function ManualDailyRecordsListPage() {
                   <td className="px-4 py-3 text-content-secondary">{record.noInventoryIdleTimeHours}</td>
                   <td className="px-4 py-3 text-content-secondary">{record.leaveHours}</td>
                   <td className="px-4 py-3 text-content-secondary">{record.meetingEngagementHours}</td>
+                  <td className="px-4 py-3 text-content-secondary">{formatManualMeetings([record])}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
                       <ManualRecordStatusIndicator status={record.status} />
@@ -158,7 +161,7 @@ export function ManualDailyRecordsListPage() {
                   </td>
                   {canReview && (
                     <td className="px-4 py-3 text-right">
-                      {record.status === "pending" && (
+                      {record.status === "pending" && record.userId !== user?.id && (
                         <div className="flex justify-end gap-2">
                           <Button variant="secondary" isLoading={isApproving} onClick={() => void approve(record.id)}>
                             Approve

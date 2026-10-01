@@ -1,4 +1,6 @@
 import { apiSlice, providesList } from "./apiSlice";
+import { loadManualTeamDay, type ManualTeamDayQuery } from "./manualTeamDay";
+import { loadManualTeamRange, type ManualTeamRangeQuery } from "./manualTeamRange";
 import { notifyOnSettle } from "./notify";
 import { buildQueryString } from "./queryString";
 import type {
@@ -15,6 +17,8 @@ import type {
   KaironCompletedUserSummary,
   ManualDailyRecord,
   ManualDailyRecordQuery,
+  ManualTeamDay,
+  ManualTeamRange,
   MonthlyGoalSummary,
   PaginatedResult,
   PaginationQuery,
@@ -55,6 +59,22 @@ export const reportsApi = apiSlice.injectEndpoints({
     getMyManualRecords: builder.query<PaginatedResult<ManualDailyRecord>, PaginationQuery | void>({
       query: (args) => ({ url: `/reports/manual${buildQueryString({ ...args })}` }),
       providesTags: (result) => providesList("ManualDailyRecords", result?.items),
+    }),
+    getManualTeamDay: builder.query<ManualTeamDay, ManualTeamDayQuery>({
+      queryFn: (args, _api, _extraOptions, query) => loadManualTeamDay(args, query),
+      providesTags: [
+        { type: "ManualDailyRecords", id: "LIST" },
+        { type: "Team" },
+        { type: "Users", id: "LIST" },
+      ],
+    }),
+    getManualTeamRange: builder.query<ManualTeamRange, ManualTeamRangeQuery>({
+      queryFn: (args, _api, _extraOptions, query) => loadManualTeamRange(args, query),
+      providesTags: [
+        { type: "ManualDailyRecords", id: "LIST" },
+        { type: "Team" },
+        { type: "Users", id: "LIST" },
+      ],
     }),
     // Other users' records, pending and decided alike (for audit) — never
     // the reviewing manager's own, which they already see in their own tab.
@@ -98,6 +118,8 @@ export const {
   useGetKaironCompletedRecordsQuery,
   useDeleteKaironRecordMutation,
   useGetMyManualRecordsQuery,
+  useGetManualTeamDayQuery,
+  useGetManualTeamRangeQuery,
   useListManualReviewsQuery,
   useBulkApproveManualRecordsMutation,
   useBulkRejectManualRecordsMutation,

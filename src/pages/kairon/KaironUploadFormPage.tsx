@@ -1,26 +1,14 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import {
-  useCompleteKaironImportMutation,
-  useStartKaironImportMutation,
-  useUploadKaironImportChunkMutation,
-} from "@/api/kaironApi";
-import type { KaironImportProgress } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { inputClasses } from "@/components/ui/FormField";
 import { useToast } from "@/features/ui/useToast";
 import { API_BASE_URL } from "@/lib/env";
+import { backgroundUploads } from "@/features/uploads/uploadService";
+import { sha256 } from "@/lib/imports";
 
 import { parseKaironFile, type KaironCsvParseResult } from "./kaironCsv";
-
-const UPLOAD_CHUNK_SIZE = 500;
-
-async function sha256(value: string | ArrayBuffer) {
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
 
 // The template endpoint (backend/app/kairon/routes.py's KaironUploadTemplate)
 // returns plain text/csv, not the {status,message,data} JSON envelope, so
@@ -42,35 +30,30 @@ async function downloadTemplate() {
 interface KaironUploadFormPageProps {
   embedded?: boolean;
   onCancel?: () => void;
-  onDone?: () => void;
+  onStarted?: () => void;
 }
 
-export function KaironUploadFormPage({ embedded = false, onCancel, onDone }: KaironUploadFormPageProps = {}) {
+export function KaironUploadFormPage({ embedded = false, onCancel, onStarted }: KaironUploadFormPageProps = {}) {
   const navigate = useNavigate();
   const { notifyError } = useToast();
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileChecksum, setFileChecksum] = useState<string | null>(null);
   const [parseResult, setParseResult] = useState<KaironCsvParseResult | null>(null);
   const [isParsing, setIsParsing] = useState(false);
-  const [progress, setProgress] = useState<KaironImportProgress | null>(null);
-  const [activeImportId, setActiveImportId] = useState<number | null>(null);
-  const [startImport, { isLoading: isStarting }] = useStartKaironImportMutation();
-  const [uploadChunk, { isLoading: isUploading }] = useUploadKaironImportChunkMutation();
-  const [completeImport, { isLoading: isCompleting }] = useCompleteKaironImportMutation();
-  const isLoading = isStarting || isUploading || isCompleting;
+  const submitted = useRef(false);
 
   const handleFile = async (file: File) => {
     setFileName(file.name);
     setParseResult(null);
     setFileChecksum(null);
-    setProgress(null);
-    setActiveImportId(null);
     setIsParsing(true);
     try {
       const contents = await file.arrayBuffer();
       const [result, checksum] = await Promise.all([parseKaironFile(file, contents), sha256(contents)]);
       setParseResult(result);
       setFileChecksum(checksum);
+    } catch {
+      notifyError("Could not read the Kairon file. Try selecting it again.");
     } finally {
       setIsParsing(false);
     }
@@ -91,44 +74,12 @@ export function KaironUploadFormPage({ embedded = false, onCancel, onDone }: Kai
     parseResult.rowErrors.length === 0 &&
     parseResult.rows.length > 0;
 
-  const handleSubmit = async () => {
-    if (!canSubmit || !parseResult || !fileName || !fileChecksum) return;
-    try {
-      const started =
-        activeImportId !== null && progress?.status === "uploading"
-          ? progress
-          : await startImport({
-              sourceFilename: fileName,
-              fileChecksum,
-              totalRows: parseResult.rows.length,
-            }).unwrap();
-      setActiveImportId(started.id);
-      setProgress(started);
-
-      for (
-        let offset = started.processedCount, chunkNumber = Math.floor(started.processedCount / UPLOAD_CHUNK_SIZE);
-        offset < parseResult.rows.length;
-        offset += UPLOAD_CHUNK_SIZE, chunkNumber += 1
-      ) {
-        const rows = parseResult.rows.slice(offset, offset + UPLOAD_CHUNK_SIZE);
-        const checksum = await sha256(JSON.stringify(rows));
-        const nextProgress = await uploadChunk({
-          importId: started.id,
-          chunkNumber,
-          checksum,
-          rows,
-        }).unwrap();
-        setProgress(nextProgress);
-      }
-
-      const completed = await completeImport(started.id).unwrap();
-      setProgress(completed);
-      setActiveImportId(null);
-      if (onDone) onDone();
-      else navigate("/input-data");
-    } catch {
-      notifyError("The Kairon upload stopped. Click Resume upload to continue from the last completed chunk.");
-    }
+  const handleSubmit = () => {
+    if (submitted.current || isParsing || !canSubmit || !parseResult || !fileName || !fileChecksum) return;
+    submitted.current = true;
+    backgroundUploads.start({ kind: "kairon", fileName, fileChecksum, rows: parseResult.rows });
+    if (onStarted) onStarted();
+    else navigate("/input-data");
   };
 
   return (
@@ -159,6 +110,7 @@ export function KaironUploadFormPage({ embedded = false, onCancel, onDone }: Kai
             type="file"
             accept=".csv,.ods,.xls,.xlsx,text/csv,application/vnd.oasis.opendocument.spreadsheet,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className={inputClasses}
+            disabled={isParsing}
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) void handleFile(file);
@@ -206,33 +158,13 @@ export function KaironUploadFormPage({ embedded = false, onCancel, onDone }: Kai
           </div>
         )}
 
-        {progress && (
-          <div className="flex flex-col gap-3 rounded-md border border-border bg-surface-muted p-4 text-sm">
-            <div className="flex items-center justify-between gap-4">
-              <span className="font-medium text-content-primary">
-                Uploaded {progress.processedCount.toLocaleString()} of {progress.totalRows.toLocaleString()} rows
-              </span>
-              <span className="text-content-muted">{Math.round((progress.processedCount / progress.totalRows) * 100)}%</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-border">
-              <div
-                className="h-full rounded-full bg-primary transition-[width]"
-                style={{ width: `${Math.min(100, (progress.processedCount / progress.totalRows) * 100)}%` }}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-content-secondary sm:grid-cols-5">
-              <span>New: {progress.insertedCount}</span>
-              <span>Updated: {progress.updatedCount}</span>
-              <span>Unchanged: {progress.unchangedCount}</span>
-              <span>Rejected: {progress.rejectedCount}</span>
-              <span>Unmatched: {progress.unmatchedCount}</span>
-            </div>
-          </div>
-        )}
+        <p className="text-xs text-content-muted">
+          Your upload continues while you browse. Track it in the bottom-right upload widget and keep this tab open.
+        </p>
 
         <div className="mt-2 flex gap-2">
-          <Button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit} isLoading={isLoading}>
-            {activeImportId !== null ? "Resume upload" : "Upload file"}
+          <Button type="button" onClick={handleSubmit} disabled={!canSubmit || isParsing}>
+            Upload file
           </Button>
           <Button
             type="button"

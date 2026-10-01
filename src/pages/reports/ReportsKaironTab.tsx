@@ -130,7 +130,7 @@ export function ReportsKaironTab() {
         <KaironUploadFormPage
           embedded
           onCancel={() => setShowUpload(false)}
-          onDone={() => setShowUpload(false)}
+          onStarted={() => setShowUpload(false)}
         />
       </Drawer>
 

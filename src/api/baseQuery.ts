@@ -31,11 +31,10 @@ interface Envelope {
 // throws an ApiErrorShape-compatible `error` on non-2xx responses. Bodies
 // are encrypted/decrypted transparently (see crypto.ts) for every endpoint
 // except the two §4b exempts login and key exchange.
-export const apiBaseQuery: BaseQueryFn<ApiRequestArgs, unknown, ApiErrorShape, object, ApiResponseMeta> = async ({
-  url,
-  method = "GET",
-  body,
-}) => {
+export const apiBaseQuery: BaseQueryFn<ApiRequestArgs, unknown, ApiErrorShape, object, ApiResponseMeta> = async (
+  { url, method = "GET", body },
+  { signal },
+) => {
   const exempt = isEncryptionExempt(method, url);
   const headers: Record<string, string> = {};
 
@@ -58,6 +57,7 @@ export const apiBaseQuery: BaseQueryFn<ApiRequestArgs, unknown, ApiErrorShape, o
       credentials: "include",
       headers,
       body: requestBody,
+      signal,
     });
   } catch {
     return {

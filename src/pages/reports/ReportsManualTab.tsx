@@ -1,48 +1,40 @@
-import { useState } from "react";
-import { Form, Formik, type FormikHelpers } from "formik";
+import { useRef, useState } from "react";
+import { FieldArray, Form, Formik, type FormikHelpers } from "formik";
 import * as Yup from "yup";
 
 import { getFieldErrors, toFormikErrors } from "@/api/apiError";
 import {
-  useCompleteManualImportMutation,
-  useLazyListManualDailyRecordsQuery,
-  useStartManualImportMutation,
-  useUploadManualImportChunkMutation,
   useUpsertManualDailyRecordMutation,
 } from "@/api/manualDailyRecordsApi";
 import { useGetMyManualRecordsQuery } from "@/api/reportsApi";
 import {
   MANUAL_DAILY_RECORD_MAX_HOURS,
+  MANUAL_MEETING_TYPES,
   type ManualBulkUploadRowError,
   type ManualDailyRecord,
   type ManualDailyRecordUpsertPayload,
-  type ManualImportProgress,
-  type ManualImportRow,
+  type ManualMeetingType,
 } from "@/api/types";
 import { useListUsersQuery } from "@/api/usersApi";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
-import { inputClasses, TextField } from "@/components/ui/FormField";
+import { inputClasses, SelectField, TextField } from "@/components/ui/FormField";
 import { ManualRecordStatusIndicator } from "@/components/ui/ManualRecordStatusIndicator";
 import { PaginationControls } from "@/components/ui/PaginationControls";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { useAuth } from "@/features/auth/useAuth";
 import { useToast } from "@/features/ui/useToast";
 import { API_BASE_URL } from "@/lib/env";
+import { backgroundUploads } from "@/features/uploads/uploadService";
+import { sha256 } from "@/lib/imports";
 
 import { parseManualBulkFile, type ManualBulkFileResult } from "../manual/manualBulkFile";
 
 import { ReportsReviewsSection } from "./ReportsReviewsSection";
+import { ManagerManualReport } from "./ManagerManualReport";
+import { formatManualMeetings, isReportDate } from "./manualReportSummary";
 
 const MANUAL_RECORDS_PAGE_SIZE = 10;
-
-const MANUAL_UPLOAD_CHUNK_SIZE = 500;
-
-async function sha256(value: string | ArrayBuffer) {
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
 
 async function downloadManualTemplate() {
   const response = await fetch(`${API_BASE_URL}/manual-daily-records/upload-template`, {
@@ -65,7 +57,7 @@ interface ManualEntryValues {
   techIssuesDowntimeHours: string;
   noInventoryIdleTimeHours: string;
   leaveHours: string;
-  meetingEngagementHours: string;
+  meetings: { type: ManualMeetingType | ""; hours: string }[];
 }
 
 const hourField = () =>
@@ -76,7 +68,8 @@ const hourField = () =>
     .required("Required");
 
 const manualValidationSchema = Yup.object({
-  date: Yup.string().required("Date is required"),
+  date: Yup.string().required("Date is required")
+    .test("calendar-date", "Enter a valid date", (value) => !value || isReportDate(value)),
   pvpCount: Yup.number()
     .typeError("Enter a whole number")
     .integer("Enter a whole number")
@@ -90,30 +83,55 @@ const manualValidationSchema = Yup.object({
   techIssuesDowntimeHours: hourField(),
   noInventoryIdleTimeHours: hourField(),
   leaveHours: hourField(),
-  meetingEngagementHours: hourField(),
+  meetings: Yup.array().of(Yup.object({
+    type: Yup.string().oneOf([...MANUAL_MEETING_TYPES], "Select a valid meeting type").required("Meeting type is required"),
+    hours: Yup.number().typeError("Enter a number")
+      .moreThan(0, "Hours must be greater than 0")
+      .max(MANUAL_DAILY_RECORD_MAX_HOURS, `Cannot exceed ${MANUAL_DAILY_RECORD_MAX_HOURS} hours`)
+      .test("two-decimals", "Use at most 2 decimal places", (value) => value === undefined || Math.abs(value * 100 - Math.round(value * 100)) < 1e-7)
+      .required("Meeting hours are required"),
+  })).max(20, "You can add up to 20 meetings")
+    .test("total-hours", `Total meeting hours cannot exceed ${MANUAL_DAILY_RECORD_MAX_HOURS}`, (meetings) =>
+      (meetings ?? []).reduce((sum, meeting) => sum + (Number(meeting?.hours) || 0), 0) <= MANUAL_DAILY_RECORD_MAX_HOURS),
 });
 
-function manualInitialValues(): ManualEntryValues {
+function todayDate() {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+}
+
+function manualInitialValues(record?: ManualDailyRecord | null, date = todayDate()): ManualEntryValues {
   return {
-    date: new Date().toISOString().slice(0, 10),
-    pvpCount: "0",
-    foundationCount: "0",
-    techIssuesDowntimeHours: "0",
-    noInventoryIdleTimeHours: "0",
-    leaveHours: "0",
-    meetingEngagementHours: "0",
+    date: record?.date ?? date,
+    pvpCount: String(record?.pvpCount ?? 0),
+    foundationCount: String(record?.foundationCount ?? 0),
+    techIssuesDowntimeHours: record?.techIssuesDowntimeHours ?? "0",
+    noInventoryIdleTimeHours: record?.noInventoryIdleTimeHours ?? "0",
+    leaveHours: record?.leaveHours ?? "0",
+    meetings: record?.meetings?.length
+      ? record.meetings.map((meeting) => ({ type: meeting.type ?? "", hours: meeting.hours }))
+      : record && Number(record.meetingEngagementHours) > 0
+        ? [{ type: record.meetingType ?? "", hours: record.meetingEngagementHours }]
+        : [],
   };
 }
 
 interface ManualEntryFormProps {
+  record?: ManualDailyRecord | null;
+  initialDate?: string;
   onCancel: () => void;
   onSaved: () => void;
 }
 
-function ManualEntryForm({ onCancel, onSaved }: ManualEntryFormProps) {
+function ManualEntryForm({ record, initialDate, onCancel, onSaved }: ManualEntryFormProps) {
   const [upsertManualRecord] = useUpsertManualDailyRecordMutation();
 
   const handleSubmit = async (values: ManualEntryValues, helpers: FormikHelpers<ManualEntryValues>) => {
+    const meetings = values.meetings.map((meeting) => ({
+      type: meeting.type as ManualMeetingType,
+      hours: Number(meeting.hours),
+    }));
+    const meetingHours = Math.round(meetings.reduce((total, meeting) => total + meeting.hours, 0) * 100) / 100;
     const payload: ManualDailyRecordUpsertPayload = {
       date: values.date,
       pvpCount: Number(values.pvpCount),
@@ -121,7 +139,9 @@ function ManualEntryForm({ onCancel, onSaved }: ManualEntryFormProps) {
       techIssuesDowntimeHours: Number(values.techIssuesDowntimeHours),
       noInventoryIdleTimeHours: Number(values.noInventoryIdleTimeHours),
       leaveHours: Number(values.leaveHours),
-      meetingEngagementHours: Number(values.meetingEngagementHours),
+      meetingEngagementHours: meetingHours,
+      meetingType: meetings.length === 1 ? meetings[0].type : null,
+      ...(meetings.length > 1 ? { meetings } : {}),
     };
     const result = await upsertManualRecord(payload);
 
@@ -138,25 +158,47 @@ function ManualEntryForm({ onCancel, onSaved }: ManualEntryFormProps) {
 
   return (
     <section id="manual-entry-form">
-      <Formik initialValues={manualInitialValues()} validationSchema={manualValidationSchema} onSubmit={handleSubmit}>
-        {({ isSubmitting, values }) => (
-          <Form className="grid grid-cols-1 gap-4 rounded-lg border border-border bg-surface p-4 md:grid-cols-2 xl:grid-cols-3">
-            <TextField label="Date" name="date" type="date" />
-            <TextField label="PVP count" name="pvpCount" type="number" min="0" step="1" />
-            <TextField label="Foundation count" name="foundationCount" type="number" min="0" step="1" />
+      <Formik initialValues={manualInitialValues(record, initialDate)} validationSchema={manualValidationSchema} onSubmit={handleSubmit}>
+        {({ errors, isSubmitting, submitCount, values }) => (
+          <Form noValidate className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4">
+            <TextField label="Date *" name="date" type="date" aria-required readOnly={Boolean(record)} />
+            <TextField label="PVP count *" name="pvpCount" type="number" min="0" step="1" aria-required />
+            <TextField label="Foundation count *" name="foundationCount" type="number" min="0" step="1" aria-required />
             <div className="rounded-md border border-brand-200 bg-brand-50 px-4 py-3">
               <span className="block text-xs font-medium text-brand-700">Total production</span>
               <span className="mt-1 block text-2xl font-semibold text-brand-900">
                 {(Number(values.pvpCount) || 0) + (Number(values.foundationCount) || 0)}
               </span>
             </div>
-            <TextField label="Technical issues downtime (hours)" name="techIssuesDowntimeHours" type="number" min="0" max={MANUAL_DAILY_RECORD_MAX_HOURS} step="0.25" />
-            <TextField label="No inventory / idle time (hours)" name="noInventoryIdleTimeHours" type="number" min="0" max={MANUAL_DAILY_RECORD_MAX_HOURS} step="0.25" />
-            <TextField label="Leave (hours)" name="leaveHours" type="number" min="0" max={MANUAL_DAILY_RECORD_MAX_HOURS} step="0.25" />
-            <TextField label="Meeting / engagement (hours)" name="meetingEngagementHours" type="number" min="0" max={MANUAL_DAILY_RECORD_MAX_HOURS} step="0.25" />
-            <div className="flex gap-2 md:col-span-2 xl:col-span-3">
-              <Button type="submit" isLoading={isSubmitting}>Save daily record</Button>
-              <Button type="button" variant="secondary" disabled={isSubmitting} onClick={onCancel}>Cancel</Button>
+            <TextField label="Technical issues downtime (hours) *" name="techIssuesDowntimeHours" type="number" min="0" max={MANUAL_DAILY_RECORD_MAX_HOURS} step="0.25" aria-required />
+            <TextField label="No inventory / idle time (hours) *" name="noInventoryIdleTimeHours" type="number" min="0" max={MANUAL_DAILY_RECORD_MAX_HOURS} step="0.25" aria-required />
+            <TextField label="Leave (hours) *" name="leaveHours" type="number" min="0" max={MANUAL_DAILY_RECORD_MAX_HOURS} step="0.25" aria-required />
+            <FieldArray name="meetings">
+              {({ push, remove }) => (
+                <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-muted p-4">
+                  <h3 className="font-semibold text-content-primary">Meetings / engagements</h3>
+                  <p className="text-xs text-content-muted">Add each meeting separately with its type and hours.</p>
+                  {values.meetings.map((_, index) => (
+                    <div key={index} className="flex flex-col gap-3 rounded-md border border-border bg-surface p-3">
+                      <h4 className="text-sm font-semibold text-content-secondary">Meeting {index + 1}</h4>
+                      <SelectField label="Meeting type *" name={`meetings.${index}.type`} placeholder="Select meeting type" aria-required>
+                        {MANUAL_MEETING_TYPES.map((meetingType) => (
+                          <option key={meetingType} value={meetingType}>{meetingType}</option>
+                        ))}
+                      </SelectField>
+                      <TextField label="Hours *" name={`meetings.${index}.hours`} type="number" min="0.01" max={MANUAL_DAILY_RECORD_MAX_HOURS} step="0.01" aria-required />
+                      <Button type="button" variant="secondary" onClick={() => remove(index)}>Remove meeting</Button>
+                    </div>
+                  ))}
+                  <Button type="button" variant="secondary" disabled={values.meetings.length >= 20} onClick={() => push({ type: "", hours: "" })}>Add meeting</Button>
+                  <p className="text-sm font-medium text-content-secondary">Total meeting hours: <strong className="text-content-primary">{(Math.round(values.meetings.reduce((total, meeting) => total + (Number(meeting.hours) || 0), 0) * 100) / 100).toFixed(2)}</strong></p>
+                  {submitCount > 0 && typeof errors.meetings === "string" && <p role="alert" className="text-xs text-danger">{errors.meetings}</p>}
+                </div>
+              )}
+            </FieldArray>
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="submit" className="min-w-0 w-full" isLoading={isSubmitting}>{record ? "Save changes" : "Save daily record"}</Button>
+              <Button type="button" variant="secondary" className="min-w-0 w-full" disabled={isSubmitting} onClick={onCancel}>Cancel</Button>
             </div>
           </Form>
         )}
@@ -165,7 +207,7 @@ function ManualEntryForm({ onCancel, onSaved }: ManualEntryFormProps) {
   );
 }
 
-function ManualBulkUploadForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
+function ManualBulkUploadForm({ onStarted, onCancel }: { onStarted: () => void; onCancel: () => void }) {
   const { notifyError } = useToast();
   const { isLoading: isLoadingUsers, refetch: refetchUsers } = useListUsersQuery("all");
   const [fileName, setFileName] = useState<string | null>(null);
@@ -173,16 +215,8 @@ function ManualBulkUploadForm({ onDone, onCancel }: { onDone: () => void; onCanc
   const [parseResult, setParseResult] = useState<ManualBulkFileResult | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [rowErrors, setRowErrors] = useState<ManualBulkUploadRowError[]>([]);
-  const [candidateRows, setCandidateRows] = useState<ManualImportRow[] | null>(null);
-  const [comparison, setComparison] = useState<{ newCount: number; modifiedCount: number; unchangedCount: number } | null>(null);
-  const [progress, setProgress] = useState<ManualImportProgress | null>(null);
-  const [activeImportId, setActiveImportId] = useState<number | null>(null);
-  const [uploadFinished, setUploadFinished] = useState(false);
-  const [loadExisting, { isFetching: isComparing }] = useLazyListManualDailyRecordsQuery();
-  const [startImport, { isLoading: isStarting }] = useStartManualImportMutation();
-  const [uploadChunk, { isLoading: isUploading }] = useUploadManualImportChunkMutation();
-  const [completeImport, { isLoading: isCompleting }] = useCompleteManualImportMutation();
-  const isLoading = isParsing || isLoadingUsers || isComparing || isStarting || isUploading || isCompleting;
+  const submitted = useRef(false);
+  const isLoading = isParsing || isLoadingUsers;
 
   const handleDownload = async () => {
     try {
@@ -197,11 +231,6 @@ function ManualBulkUploadForm({ onDone, onCancel }: { onDone: () => void; onCanc
     setFileChecksum(null);
     setParseResult(null);
     setRowErrors([]);
-    setCandidateRows(null);
-    setComparison(null);
-    setProgress(null);
-    setActiveImportId(null);
-    setUploadFinished(false);
     setIsParsing(true);
     try {
       const [contents, freshUsers] = await Promise.all([file.arrayBuffer(), refetchUsers().unwrap()]);
@@ -219,74 +248,18 @@ function ManualBulkUploadForm({ onDone, onCancel }: { onDone: () => void; onCanc
     }
   };
 
-  const valuesMatch = (row: ManualImportRow, existing: ManualDailyRecord) =>
-    existing.productionCount === row.productionCount &&
-    Number(existing.techIssuesDowntimeHours) === row.techIssuesDowntimeHours &&
-    Number(existing.noInventoryIdleTimeHours) === row.noInventoryIdleTimeHours &&
-    Number(existing.leaveHours) === row.leaveHours &&
-    Number(existing.meetingEngagementHours) === row.meetingEngagementHours;
-
-  const handleUpload = async () => {
-    if (!parseResult || !fileName || !fileChecksum || parseResult.rows.length === 0) return;
-    try {
-      let rowsToUpload = candidateRows;
-      if (activeImportId === null || !rowsToUpload) {
-        const userIds = [...new Set(parseResult.rows.map((row) => row.userId))];
-        const existing = await loadExisting({
-          fromDate: parseResult.minDate,
-          toDate: parseResult.maxDate,
-          userIds,
-        }).unwrap();
-        const byUserDate = new Map(existing.map((record) => [`${record.userId}|${record.date}`, record]));
-        let newCount = 0;
-        let modifiedCount = 0;
-        let unchangedCount = 0;
-        rowsToUpload = parseResult.rows.filter((row) => {
-          const record = byUserDate.get(`${row.userId}|${row.date}`);
-          if (!record) {
-            newCount += 1;
-            return true;
-          }
-          if (valuesMatch(row, record)) {
-            unchangedCount += 1;
-            return false;
-          }
-          modifiedCount += 1;
-          return true;
-        });
-        setCandidateRows(rowsToUpload);
-        setComparison({ newCount, modifiedCount, unchangedCount });
-        if (rowsToUpload.length === 0) {
-          setUploadFinished(true);
-          onDone();
-          return;
-        }
-      }
-
-      const started =
-        activeImportId !== null && progress?.status === "uploading"
-          ? progress
-          : await startImport({ sourceFilename: fileName, fileChecksum, totalRows: rowsToUpload.length }).unwrap();
-      setActiveImportId(started.id);
-      setProgress(started);
-      for (
-        let offset = started.processedCount, chunkNumber = Math.floor(started.processedCount / MANUAL_UPLOAD_CHUNK_SIZE);
-        offset < rowsToUpload.length;
-        offset += MANUAL_UPLOAD_CHUNK_SIZE, chunkNumber += 1
-      ) {
-        const rows = rowsToUpload.slice(offset, offset + MANUAL_UPLOAD_CHUNK_SIZE);
-        const checksum = await sha256(JSON.stringify(rows));
-        const next = await uploadChunk({ importId: started.id, chunkNumber, checksum, rows }).unwrap();
-        setProgress(next);
-      }
-      const completed = await completeImport(started.id).unwrap();
-      setProgress(completed);
-      setActiveImportId(null);
-      setUploadFinished(true);
-      onDone();
-    } catch {
-      notifyError("The manual upload stopped. Click Resume upload to continue from the last completed chunk.");
-    }
+  const handleUpload = () => {
+    if (submitted.current || isLoading || !canSubmit || !parseResult || !fileName || !fileChecksum) return;
+    submitted.current = true;
+    backgroundUploads.start({
+      kind: "manual",
+      fileName,
+      fileChecksum,
+      rows: parseResult.rows,
+      minDate: parseResult.minDate,
+      maxDate: parseResult.maxDate,
+    });
+    onStarted();
   };
 
   const canSubmit = Boolean(
@@ -312,7 +285,7 @@ function ManualBulkUploadForm({ onDone, onCancel }: { onDone: () => void; onCanc
           type="file"
           accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           className={inputClasses}
-          disabled={isLoadingUsers}
+          disabled={isLoading}
           onChange={(event) => {
             const selected = event.target.files?.[0];
             if (selected) void handleFile(selected);
@@ -356,37 +329,15 @@ function ManualBulkUploadForm({ onDone, onCancel }: { onDone: () => void; onCanc
         </div>
       )}
 
-      {comparison && (
-        <div className="grid grid-cols-3 gap-3 rounded-lg border border-border bg-surface-muted p-4 text-sm text-content-secondary" role="status">
-          <span>New: <strong>{comparison.newCount}</strong></span>
-          <span>Modified: <strong>{comparison.modifiedCount}</strong></span>
-          <span>Unchanged: <strong>{comparison.unchangedCount}</strong></span>
-        </div>
-      )}
-
-      {progress && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-muted p-4 text-sm">
-          <div className="flex justify-between gap-4"><strong>Uploaded {progress.processedCount.toLocaleString()} of {progress.totalRows.toLocaleString()}</strong><span>{Math.round((progress.processedCount / progress.totalRows) * 100)}%</span></div>
-          <div className="h-2 overflow-hidden rounded-full bg-border"><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${Math.min(100, (progress.processedCount / progress.totalRows) * 100)}%` }} /></div>
-          <div className="grid grid-cols-3 gap-2 text-content-secondary"><span>Created: {progress.createdCount}</span><span>Updated: {progress.updatedCount}</span><span>Unchanged: {progress.unchangedCount}</span></div>
-        </div>
-      )}
-
-      {uploadFinished && (
-        <div className="rounded-lg border border-success/30 bg-success/5 p-4 text-sm text-content-secondary" role="status">
-          {comparison && comparison.newCount + comparison.modifiedCount === 0
-            ? "No new or modified records were found. Nothing needed to be uploaded."
-            : "Upload complete. Select another file to start a new upload."}
-        </div>
-      )}
+      <p className="text-xs text-content-muted">
+        Comparison and upload continue while you browse. Track them in the bottom-right upload widget and keep this tab open.
+      </p>
 
       <div className="flex gap-2">
-        {!uploadFinished && (
-          <Button type="button" isLoading={isLoading} disabled={!canSubmit} onClick={() => void handleUpload()}>
-            {activeImportId !== null ? "Resume upload" : "Compare and upload"}
-          </Button>
-        )}
-        <Button type="button" variant="secondary" disabled={isLoading} onClick={onCancel}>Close</Button>
+        <Button type="button" isLoading={isLoading} disabled={!canSubmit} onClick={handleUpload}>
+          Compare and upload
+        </Button>
+        <Button type="button" variant="secondary" onClick={onCancel}>Close</Button>
       </div>
     </div>
   );
@@ -395,36 +346,62 @@ function ManualBulkUploadForm({ onDone, onCancel }: { onDone: () => void; onCanc
 export function ReportsManualTab() {
   const [page, setPage] = useState(1);
   const [isEntryFormOpen, setIsEntryFormOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<ManualDailyRecord | null>(null);
+  const [entryDate, setEntryDate] = useState(todayDate);
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
+  const [isTeamFiltersOpen, setIsTeamFiltersOpen] = useState(false);
   const { hasFeature, hasRoleType } = useAuth();
   const isManager = hasRoleType("manager");
+  const isLead = hasRoleType("lead");
   const canWriteReports = hasFeature("reports", "write");
-  const canSubmit = canWriteReports && (isManager || hasRoleType("lead") || hasRoleType("employee"));
-  const canReview = canWriteReports && isManager;
+  const canSubmit = canWriteReports && (isLead || hasRoleType("employee"));
+  const canBulkUpload = canWriteReports && isManager;
+  const canViewTeam = hasFeature("reports") && (isManager || isLead);
+  const showOwnRecords = !isManager && !isLead;
   const { data: pageData, isLoading, isError, refetch } = useGetMyManualRecordsQuery(
     { page, pageSize: MANUAL_RECORDS_PAGE_SIZE },
-    { refetchOnMountOrArgChange: true },
+    { refetchOnMountOrArgChange: true, skip: !showOwnRecords },
   );
   const records = pageData?.items;
+
+  const openNewEntry = (date = todayDate()) => {
+    setEditingRecord(null);
+    setEntryDate(date);
+    setIsEntryFormOpen(true);
+  };
+  const openEditEntry = (record: ManualDailyRecord) => {
+    setEditingRecord(record);
+    setEntryDate(record.date);
+    setIsEntryFormOpen(true);
+  };
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-content-primary">My records</h2>
-          <p className="text-sm text-content-muted">Review your submitted daily production and approval status.</p>
+          <h2 className="text-base font-semibold text-content-primary">{canViewTeam ? "Manual entries" : "My records"}</h2>
+          <p className="text-sm text-content-muted">
+            {isLead
+              ? "Review your coders’ daily entries. Your own entries and edits are automatically approved."
+              : isManager
+                ? "View daily entries by lead and team."
+                : "Submit your daily production for your lead to review."}
+          </p>
         </div>
-        {canSubmit && (
+        {(canSubmit || canBulkUpload || canViewTeam) && (
           <div className="flex flex-wrap gap-2">
-            {canReview && <Button type="button" variant="secondary" onClick={() => setIsBulkUploadOpen(true)}>Bulk upload</Button>}
-            <Button
-              type="button"
-              aria-expanded={isEntryFormOpen}
-              aria-controls="manual-entry-form"
-              onClick={() => setIsEntryFormOpen(true)}
-            >
-              Add daily record
-            </Button>
+            {canViewTeam && <Button type="button" variant="secondary" aria-haspopup="dialog" aria-expanded={isTeamFiltersOpen} onClick={() => setIsTeamFiltersOpen(true)}>Filters</Button>}
+            {canBulkUpload && <Button type="button" variant="secondary" onClick={() => setIsBulkUploadOpen(true)}>Bulk upload</Button>}
+            {canSubmit && (
+              <Button
+                type="button"
+                aria-expanded={isEntryFormOpen}
+                aria-controls="manual-entry-form"
+                onClick={() => openNewEntry()}
+              >
+                Add daily record
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -432,11 +409,14 @@ export function ReportsManualTab() {
       <Drawer
         open={canSubmit && isEntryFormOpen}
         onClose={() => setIsEntryFormOpen(false)}
-        title="Add daily production"
-        description="Submit only your own production record for the selected date."
-        widthClass="max-w-2xl"
+        title={editingRecord ? "Edit daily production" : "Add daily production"}
+        description={isLead ? "Your daily entry is automatically approved, including any edits." : "Submit your own production record for the selected date."}
+        widthClass="max-w-lg"
       >
         <ManualEntryForm
+          key={editingRecord?.id ?? entryDate}
+          record={editingRecord}
+          initialDate={entryDate}
           onCancel={() => setIsEntryFormOpen(false)}
           onSaved={() => {
             setPage(1);
@@ -446,7 +426,7 @@ export function ReportsManualTab() {
       </Drawer>
 
       <Drawer
-        open={canReview && isBulkUploadOpen}
+        open={canBulkUpload && isBulkUploadOpen}
         onClose={() => setIsBulkUploadOpen(false)}
         title="Bulk upload manual records"
         description="Import month-to-date or historical daily production. Existing identical user-day values are skipped."
@@ -454,13 +434,23 @@ export function ReportsManualTab() {
       >
         <ManualBulkUploadForm
           onCancel={() => setIsBulkUploadOpen(false)}
-          onDone={() => {
+          onStarted={() => {
             setPage(1);
+            setIsBulkUploadOpen(false);
           }}
         />
       </Drawer>
 
-      <section>
+      {canViewTeam && isManager && <ManagerManualReport filtersOpen={isTeamFiltersOpen} onCloseFilters={() => setIsTeamFiltersOpen(false)} />}
+      {canViewTeam && isLead && (
+        <ReportsReviewsSection
+          filtersOpen={isTeamFiltersOpen}
+          onCloseFilters={() => setIsTeamFiltersOpen(false)}
+          onEditOwnRecord={isLead && canSubmit ? openEditEntry : undefined}
+        />
+      )}
+
+      {showOwnRecords && <section className="flex flex-col gap-3">
         {isLoading && <LoadingState label="Loading your records…" />}
         {isError && <ErrorState message="Couldn't load your records." onRetry={refetch} />}
         {!isLoading && !isError && records && records.length === 0 && <EmptyState title="No records yet" />}
@@ -478,6 +468,7 @@ export function ReportsManualTab() {
                     <th className="px-4 py-3 font-medium">Idle</th>
                     <th className="px-4 py-3 font-medium">Leave</th>
                     <th className="px-4 py-3 font-medium">Meeting</th>
+                    <th className="px-4 py-3 font-medium">Meeting Type</th>
                     <th className="px-4 py-3 font-medium">Status</th>
                   </tr>
                 </thead>
@@ -492,6 +483,7 @@ export function ReportsManualTab() {
                       <td className="px-4 py-3 text-content-secondary">{record.noInventoryIdleTimeHours}</td>
                       <td className="px-4 py-3 text-content-secondary">{record.leaveHours}</td>
                       <td className="px-4 py-3 text-content-secondary">{record.meetingEngagementHours}</td>
+                      <td className="px-4 py-3 text-content-secondary">{formatManualMeetings([record])}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-1">
                           <ManualRecordStatusIndicator status={record.status} />
@@ -508,9 +500,7 @@ export function ReportsManualTab() {
             <PaginationControls page={pageData.page} pageSize={pageData.pageSize} total={pageData.total} totalPages={pageData.totalPages} onPageChange={setPage} />
           </div>
         )}
-      </section>
-
-      {canReview && <ReportsReviewsSection />}
+      </section>}
     </div>
   );
 }

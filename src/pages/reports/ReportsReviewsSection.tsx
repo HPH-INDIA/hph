@@ -1,516 +1,279 @@
-import { useMemo, useState } from "react";
+import { useState, type ReactNode } from "react";
 
+import { getErrorMessage } from "@/api/apiError";
 import { useApproveManualDailyRecordMutation, useRejectManualDailyRecordMutation } from "@/api/manualDailyRecordsApi";
-import { useBulkApproveManualRecordsMutation, useBulkRejectManualRecordsMutation, useListManualReviewsQuery } from "@/api/reportsApi";
-import { useGetMyManagerTeamQuery, useListUsersQuery } from "@/api/usersApi";
-import type { ManualDailyRecordStatus } from "@/api/types";
-import { useUserNameLookup } from "@/api/useUserNameLookup";
+import { useBulkApproveManualRecordsMutation, useBulkRejectManualRecordsMutation, useGetManualTeamRangeQuery } from "@/api/reportsApi";
+import type { ManualDailyRecord, ManualTeamDayEntry, ManualTeamUser } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { inputClasses } from "@/components/ui/FormField";
 import { ManualRecordStatusIndicator } from "@/components/ui/ManualRecordStatusIndicator";
-import { PaginationControls } from "@/components/ui/PaginationControls";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { useAuth } from "@/features/auth/useAuth";
 import { useToast } from "@/features/ui/useToast";
 
-type DateFilterMode = "all" | "day" | "month" | "range";
+import { ManualReportFilters, type PeriodMode } from "./ManualReportFilters";
+import { PeriodRecordsTable, ProductionCards } from "./ManagerManualReport";
+import { formatManualMeetings, isReportWindow, reportToday, type ManualReportWindow } from "./manualReportSummary";
 
-const RECORDS_PAGE_SIZE = 10;
+interface ReportsReviewsSectionProps {
+  onEditOwnRecord?: (record: ManualDailyRecord) => void;
+  filtersOpen: boolean;
+  onCloseFilters: () => void;
+}
 
-const STATUS_TABS: { key: ManualDailyRecordStatus | "all"; label: string }[] = [
-  { key: "pending", label: "Pending" },
-  { key: "approved", label: "Approved" },
-  { key: "rejected", label: "Rejected" },
-  { key: "all", label: "All" },
-];
+interface RejectDraft {
+  date: string;
+  ids: number[];
+  reason: string;
+  bulk: boolean;
+}
 
-// The manager-only "Reviews" breadcrumb under the Manual tab (Reports doc
-// §3.3) — other users' records (never the reviewing manager's own, which
-// they already see in their own Manual tab), with individual
-// approve/reject plus two bulk actions: Accept All (everything currently
-// visible/filtered, not every pending record system-wide) and Reject
-// Multiple (one reason per selected record, never one shared reason).
-export function ReportsReviewsSection() {
-  const [page, setPage] = useState(1);
-  const [statusTab, setStatusTab] = useState<ManualDailyRecordStatus | "all">("all");
-  const [leadId, setLeadId] = useState<number | null>(null);
-  const [userId, setUserId] = useState<number | null>(null);
-  const [dateMode, setDateMode] = useState<DateFilterMode>("all");
-  const [dayDate, setDayDate] = useState("");
-  const [month, setMonth] = useState("");
-  const [rangeStart, setRangeStart] = useState("");
-  const [rangeEnd, setRangeEnd] = useState("");
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [singleRejectId, setSingleRejectId] = useState<number | null>(null);
-  const [singleReason, setSingleReason] = useState("");
-  // Non-null while the reject-multiple modal is open: id -> that record's own reason.
-  const [rejectDraft, setRejectDraft] = useState<Record<number, string> | null>(null);
+function userName(user: ManualTeamUser) {
+  return `${user.firstName} ${user.lastName}`.trim();
+}
 
-  const { hasRoleType } = useAuth();
-  const isManager = hasRoleType("manager");
-  const { data: users = [] } = useListUsersQuery("active");
-  const { data: teamData } = useGetMyManagerTeamQuery(
-    { page: 1, pageSize: 1, search: null, leadId: null },
-    { skip: !isManager },
-  );
-  const leads = teamData?.leads ?? [];
+function periodLabel(window: ManualReportWindow) {
+  const format = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", {
+    day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
+  });
+  return window.fromDate === window.toDate ? format(window.fromDate) : `${format(window.fromDate)} – ${format(window.toDate)}`;
+}
 
-  const userOptions = useMemo(() => {
-    const eligible = users.filter((user) => {
-      if (user.role.roleType !== "lead" && user.role.roleType !== "employee") return false;
-      if (leadId === null) return true;
-      return user.id === leadId || user.reports_to_id === leadId;
-    });
-    return eligible.sort((a, b) =>
-      `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`),
-    );
-  }, [leadId, users]);
-
-  const dateRange = useMemo(() => {
-    if (dateMode === "day") return { fromDate: dayDate || null, toDate: dayDate || null };
-    if (dateMode === "range") return { fromDate: rangeStart || null, toDate: rangeEnd || null };
-    if (dateMode === "month" && month) {
-      const [year, monthNumber] = month.split("-").map(Number);
-      const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
-      return { fromDate: `${month}-01`, toDate: `${month}-${String(lastDay).padStart(2, "0")}` };
-    }
-    return { fromDate: null, toDate: null };
-  }, [dateMode, dayDate, month, rangeEnd, rangeStart]);
-
-  const {
-    data: pageData,
-    isLoading,
-    isError,
-    refetch,
-  } = useListManualReviewsQuery(
-    {
-      status: statusTab === "all" ? null : statusTab,
-      fromDate: dateRange.fromDate,
-      toDate: dateRange.toDate,
-      userId,
-      leadId,
-      page,
-      pageSize: RECORDS_PAGE_SIZE,
-    },
-    { refetchOnMountOrArgChange: true },
-  );
-  const records = pageData?.items;
-  const getUserName = useUserNameLookup();
-  const usersById = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
-  const getLeadName = (recordUserId: number) => {
-    const recordUser = usersById.get(recordUserId);
-    if (!recordUser) return "—";
-    if (recordUser.role.roleType === "lead") return `${recordUser.first_name} ${recordUser.last_name}`;
-    return getUserName(recordUser.reports_to_id);
-  };
-  const { notifyInfo } = useToast();
-
-  const [approveOne, { isLoading: isApprovingOne }] = useApproveManualDailyRecordMutation();
-  const [rejectOne, { isLoading: isRejectingOne }] = useRejectManualDailyRecordMutation();
-  const [bulkApprove, { isLoading: isBulkApproving }] = useBulkApproveManualRecordsMutation();
-  const [bulkReject, { isLoading: isBulkRejecting }] = useBulkRejectManualRecordsMutation();
-
-  const resetResults = () => {
-    setPage(1);
-    setSelected(new Set());
-  };
-
-  const pendingVisibleIds = useMemo(
-    () => (records ?? []).filter((record) => record.status === "pending").map((record) => record.id),
-    [records],
-  );
-
-  const toggleSelected = (id: number) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const handleAcceptAll = async () => {
-    if (pendingVisibleIds.length === 0) return;
-    const result = await bulkApprove(pendingVisibleIds);
-    if (!("error" in result) && result.data.skipped.length > 0) {
-      notifyInfo(`${result.data.approved.length} approved, ${result.data.skipped.length} skipped (already decided).`);
-    }
-  };
-
-  const handleSingleReject = async () => {
-    if (singleRejectId === null) return;
-    const result = await rejectOne({ id: singleRejectId, reason: singleReason || null });
-    if (!("error" in result)) {
-      setSingleRejectId(null);
-      setSingleReason("");
-    }
-  };
-
-  const openRejectMultiple = () => {
-    if (selected.size === 0) return;
-    setRejectDraft(Object.fromEntries(Array.from(selected).map((id) => [id, ""])));
-  };
-
-  const submitRejectMultiple = async () => {
-    if (!rejectDraft) return;
-    const items = Object.entries(rejectDraft).map(([id, reason]) => ({ id: Number(id), reason: reason || null }));
-    const result = await bulkReject(items);
-    if (!("error" in result)) {
-      if (result.data.skipped.length > 0) {
-        notifyInfo(`${result.data.rejected.length} rejected, ${result.data.skipped.length} skipped (already decided).`);
-      }
-      setRejectDraft(null);
-      setSelected(new Set());
-    }
-  };
-
+function TeamRecordsTable({
+  entries,
+  caption,
+  renderActions,
+}: {
+  entries: ManualTeamDayEntry[];
+  caption: string;
+  renderActions?: (entry: ManualTeamDayEntry) => ReactNode;
+}) {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-base font-semibold text-content-primary">Team manual records</h2>
-          <p className="text-sm text-content-muted">Review and filter daily records across your leads and coders.</p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            disabled={pendingVisibleIds.length === 0}
-            isLoading={isBulkApproving}
-            onClick={() => void handleAcceptAll()}
-          >
-            Accept all ({pendingVisibleIds.length})
-          </Button>
-          <Button variant="danger" disabled={selected.size === 0} onClick={openRejectMultiple}>
-            Reject selected ({selected.size})
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex gap-1 border-b border-border">
-        {STATUS_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => {
-              setStatusTab(tab.key);
-              resetResults();
-            }}
-            className={`px-3 py-2 text-sm font-medium ${
-              statusTab === tab.key
-                ? "border-b-2 border-brand-600 text-brand-700"
-                : "text-content-muted hover:text-content-secondary"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 rounded-lg bg-surface-muted p-3 md:grid-cols-2 xl:grid-cols-4">
-        {isManager && (
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-content-secondary" htmlFor="manual-lead-filter">Lead</label>
-            <select
-              id="manual-lead-filter"
-              className={inputClasses}
-              value={leadId ?? ""}
-              onChange={(event) => {
-                setLeadId(event.target.value ? Number(event.target.value) : null);
-                setUserId(null);
-                resetResults();
-              }}
-            >
-              <option value="">All leads</option>
-              {leads.map((lead) => (
-                <option key={lead.id} value={lead.id}>{lead.firstName} {lead.lastName}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-content-secondary" htmlFor="manual-user-filter">User</label>
-          <select
-            id="manual-user-filter"
-            className={inputClasses}
-            value={userId ?? ""}
-            onChange={(event) => {
-              setUserId(event.target.value ? Number(event.target.value) : null);
-              resetResults();
-            }}
-          >
-            <option value="">All users</option>
-            {userOptions.map((user) => (
-              <option key={user.id} value={user.id}>{user.first_name} {user.last_name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-content-secondary" htmlFor="manual-date-mode">Date</label>
-          <select
-            id="manual-date-mode"
-            className={inputClasses}
-            value={dateMode}
-            onChange={(event) => {
-              setDateMode(event.target.value as DateFilterMode);
-              resetResults();
-            }}
-          >
-            <option value="all">All dates</option>
-            <option value="day">Single day</option>
-            <option value="month">Month</option>
-            <option value="range">Date range</option>
-          </select>
-        </div>
-
-        {dateMode === "day" && (
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-content-secondary" htmlFor="manual-day-filter">Day</label>
-            <input
-              id="manual-day-filter"
-              type="date"
-              className={inputClasses}
-              value={dayDate}
-              onChange={(event) => {
-                setDayDate(event.target.value);
-                resetResults();
-              }}
-            />
-          </div>
-        )}
-
-        {dateMode === "month" && (
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-content-secondary" htmlFor="manual-month-filter">Month</label>
-            <input
-              id="manual-month-filter"
-              type="month"
-              className={inputClasses}
-              value={month}
-              onChange={(event) => {
-                setMonth(event.target.value);
-                resetResults();
-              }}
-            />
-          </div>
-        )}
-
-        {dateMode === "range" && (
-          <>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-content-secondary" htmlFor="manual-range-start">From</label>
-              <input
-                id="manual-range-start"
-                type="date"
-                className={inputClasses}
-                value={rangeStart}
-                max={rangeEnd || undefined}
-                onChange={(event) => {
-                  setRangeStart(event.target.value);
-                  resetResults();
-                }}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-content-secondary" htmlFor="manual-range-end">To</label>
-              <input
-                id="manual-range-end"
-                type="date"
-                className={inputClasses}
-                value={rangeEnd}
-                min={rangeStart || undefined}
-                onChange={(event) => {
-                  setRangeEnd(event.target.value);
-                  resetResults();
-                }}
-              />
-            </div>
-          </>
-        )}
-
-        <div className="flex items-end">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              setLeadId(null);
-              setUserId(null);
-              setDateMode("all");
-              setDayDate("");
-              setMonth("");
-              setRangeStart("");
-              setRangeEnd("");
-              resetResults();
-            }}
-          >
-            Clear filters
-          </Button>
-        </div>
-      </div>
-
-      {isLoading && <LoadingState label="Loading team records…" />}
-      {isError && <ErrorState message="Couldn't load team records." onRetry={refetch} />}
-      {!isLoading && !isError && records && records.length === 0 && <EmptyState title="No records match these filters" />}
-
-      {!isLoading && !isError && records && records.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-border">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-            <thead className="bg-surface-muted text-xs uppercase tracking-wide text-content-muted">
-              <tr>
-                <th className="px-3 py-2" />
-                <th className="px-3 py-2 font-medium">User</th>
-                <th className="px-3 py-2 font-medium">Lead</th>
-                <th className="px-3 py-2 font-medium">Date</th>
-                <th className="px-3 py-2 font-medium">PVP</th>
-                <th className="px-3 py-2 font-medium">Foundation</th>
-                <th className="px-3 py-2 font-medium">Total</th>
-                <th className="px-3 py-2 font-medium">Downtime</th>
-                <th className="px-3 py-2 font-medium">Idle</th>
-                <th className="px-3 py-2 font-medium">Leave</th>
-                <th className="px-3 py-2 font-medium">Meeting</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {records.map((record) => (
-                <tr key={record.id}>
-                  <td className="px-3 py-2">
-                    {record.status === "pending" && (
-                      <input
-                        type="checkbox"
-                        checked={selected.has(record.id)}
-                        onChange={() => toggleSelected(record.id)}
-                        aria-label={`Select record #${record.id} for bulk reject`}
-                      />
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-content-primary">{getUserName(record.userId)}</td>
-                  <td className="px-3 py-2 text-content-secondary">{getLeadName(record.userId)}</td>
-                  <td className="px-3 py-2 text-content-secondary">{record.date}</td>
-                  <td className="px-3 py-2 text-content-secondary">{record.pvpCount}</td>
-                  <td className="px-3 py-2 text-content-secondary">{record.foundationCount}</td>
-                  <td className="px-3 py-2 font-medium text-content-primary">{record.productionCount}</td>
-                  <td className="px-3 py-2 text-content-secondary">{record.techIssuesDowntimeHours}</td>
-                  <td className="px-3 py-2 text-content-secondary">{record.noInventoryIdleTimeHours}</td>
-                  <td className="px-3 py-2 text-content-secondary">{record.leaveHours}</td>
-                  <td className="px-3 py-2 text-content-secondary">{record.meetingEngagementHours}</td>
-                  <td className="px-3 py-2">
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="w-full text-left text-sm">
+        <caption className="sr-only">{caption}</caption>
+        <thead className="bg-surface-muted text-xs uppercase tracking-wide text-content-muted">
+          <tr>
+            <th className="px-3 py-2 font-medium">User</th>
+            <th className="px-3 py-2 font-medium">PVP</th>
+            <th className="px-3 py-2 font-medium">Foundation</th>
+            <th className="px-3 py-2 font-medium">Total</th>
+            <th className="px-3 py-2 font-medium">Downtime (hours)</th>
+            <th className="px-3 py-2 font-medium">Idle (hours)</th>
+            <th className="px-3 py-2 font-medium">Leave (hours)</th>
+            <th className="px-3 py-2 font-medium">Meeting (hours)</th>
+            <th className="px-3 py-2 font-medium">Meetings</th>
+            <th className="px-3 py-2 font-medium">Status</th>
+            {renderActions && <th className="px-3 py-2 font-medium">Actions</th>}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {entries.map((entry) => {
+            const { user, record } = entry;
+            return (
+              <tr key={user.id}>
+                <th scope="row" className="px-3 py-3 font-medium text-content-primary">
+                  <span className="block whitespace-nowrap">{userName(user)}</span>
+                  <span className="block text-xs font-normal text-content-muted">{user.empId}</span>
+                </th>
+                <td className="px-3 py-3 text-content-secondary">{record?.pvpCount ?? "—"}</td>
+                <td className="px-3 py-3 text-content-secondary">{record?.foundationCount ?? "—"}</td>
+                <td className="px-3 py-3 font-medium text-content-primary">{record?.productionCount ?? "—"}</td>
+                <td className="px-3 py-3 text-content-secondary">{record?.techIssuesDowntimeHours ?? "—"}</td>
+                <td className="px-3 py-3 text-content-secondary">{record?.noInventoryIdleTimeHours ?? "—"}</td>
+                <td className="px-3 py-3 text-content-secondary">{record?.leaveHours ?? "—"}</td>
+                <td className="px-3 py-3 text-content-secondary">{record?.meetingEngagementHours ?? "—"}</td>
+                <td className="px-3 py-3 text-content-secondary">{record ? formatManualMeetings([record]) : "—"}</td>
+                <td className="px-3 py-3">
+                  {record ? (
                     <div className="flex flex-col gap-1">
                       <ManualRecordStatusIndicator status={record.status} />
                       {record.status === "rejected" && record.rejectionReason && (
                         <span className="text-xs text-content-muted">{record.rejectionReason}</span>
                       )}
                     </div>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {record.status === "pending" && (
-                      <div className="flex justify-end gap-2">
-                        <Button variant="secondary" isLoading={isApprovingOne} onClick={() => void approveOne(record.id)}>
-                          Approve
-                        </Button>
-                        <Button variant="danger" onClick={() => setSingleRejectId(record.id)}>
-                          Reject
-                        </Button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            </table>
-          </div>
-          <PaginationControls
-            page={pageData.page}
-            pageSize={pageData.pageSize}
-            total={pageData.total}
-            totalPages={pageData.totalPages}
-            onPageChange={(nextPage) => {
-              setPage(nextPage);
-              setSelected(new Set());
-            }}
-          />
-        </div>
-      )}
-
-      {singleRejectId !== null && (
-        <Drawer
-          open
-          onClose={() => {
-            setSingleRejectId(null);
-            setSingleReason("");
-          }}
-          title="Reject this record?"
-          description="Let the coder know what to fix (optional)."
-          widthClass="max-w-md"
-        >
-            <textarea
-              className={`${inputClasses} w-full`}
-              rows={3}
-              value={singleReason}
-              onChange={(event) => setSingleReason(event.target.value)}
-              placeholder="Reason (optional)"
-            />
-            <div className="mt-4 flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                disabled={isRejectingOne}
-                onClick={() => {
-                  setSingleRejectId(null);
-                  setSingleReason("");
-                }}
-              >
-                Cancel
-              </Button>
-              <Button variant="danger" isLoading={isRejectingOne} onClick={() => void handleSingleReject()}>
-                Reject
-              </Button>
-            </div>
-        </Drawer>
-      )}
-
-      {rejectDraft && (
-        <Drawer
-          open
-          onClose={() => setRejectDraft(null)}
-          title={`Reject ${Object.keys(rejectDraft).length} record(s)`}
-          description="Give each record its own reason (optional)."
-          widthClass="max-w-xl"
-        >
-            <div className="flex flex-col gap-3">
-              {Object.keys(rejectDraft).map((idString) => {
-                const id = Number(idString);
-                const record = records?.find((candidate) => candidate.id === id);
-                return (
-                  <div key={id} className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-content-secondary">
-                      {record ? `${getUserName(record.userId)} — ${record.date}` : `Record #${id}`}
-                    </label>
-                    <textarea
-                      className={inputClasses}
-                      rows={2}
-                      value={rejectDraft[id]}
-                      onChange={(event) =>
-                        setRejectDraft((prev) => (prev ? { ...prev, [id]: event.target.value } : prev))
-                      }
-                      placeholder="Reason (optional)"
-                    />
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <Button variant="secondary" disabled={isBulkRejecting} onClick={() => setRejectDraft(null)}>
-                Cancel
-              </Button>
-              <Button variant="danger" isLoading={isBulkRejecting} onClick={() => void submitRejectMultiple()}>
-                Reject all
-              </Button>
-            </div>
-        </Drawer>
-      )}
+                  ) : (
+                    <span className="whitespace-nowrap text-content-muted">Not submitted</span>
+                  )}
+                </td>
+                {renderActions && <td className="px-3 py-3">{renderActions(entry)}</td>}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
+  );
+}
+
+export function ReportsReviewsSection({ onEditOwnRecord, filtersOpen, onCloseFilters }: ReportsReviewsSectionProps) {
+  const [window, setWindow] = useState<ManualReportWindow>(() => ({ fromDate: reportToday(), toDate: reportToday() }));
+  const [appliedMode, setAppliedMode] = useState<PeriodMode>("day");
+  const [draftWindow, setDraftWindow] = useState(window);
+  const [draftMode, setDraftMode] = useState<PeriodMode>(appliedMode);
+  const [rejectDraft, setRejectDraft] = useState<RejectDraft | null>(null);
+  const { user, hasRoleType, hasFeature } = useAuth();
+  const canReview = hasRoleType("lead") && hasFeature("reports", "write");
+  const { notifyInfo } = useToast();
+  const { currentData, isFetching, isError, error, refetch } = useGetManualTeamRangeQuery(
+    { ...window, viewerId: user?.id ?? 0, viewerRole: user?.role.roleType ?? null },
+    { refetchOnMountOrArgChange: true, skip: !user },
+  );
+  const report = currentData?.fromDate === window.fromDate && currentData.toDate === window.toDate ? currentData : undefined;
+  const team = report?.teams.find((entry) => entry.lead?.id === user?.id);
+  const dayView = window.fromDate === window.toDate;
+  const date = window.fromDate;
+  const period = periodLabel(window);
+
+  const [approveOne, { isLoading: isApprovingOne }] = useApproveManualDailyRecordMutation();
+  const [rejectOne, { isLoading: isRejectingOne }] = useRejectManualDailyRecordMutation();
+  const [bulkApprove, { isLoading: isBulkApproving }] = useBulkApproveManualRecordsMutation();
+  const [bulkReject, { isLoading: isBulkRejecting }] = useBulkRejectManualRecordsMutation();
+  const isMutating = isApprovingOne || isRejectingOne || isBulkApproving || isBulkRejecting;
+  const actionsDisabled = isMutating || isFetching || isError || !dayView;
+  const pendingIds = new Set(
+    canReview && dayView && team
+      ? team.coders.flatMap(({ user: coder, records }) => records
+        .filter((record) => coder.id !== user?.id && record.date === date && record.status === "pending")
+        .map((record) => record.id))
+      : [],
+  );
+
+  const closeFilters = () => {
+    setDraftWindow(window);
+    setDraftMode(appliedMode);
+    onCloseFilters();
+  };
+  const applyFilters = () => {
+    if (isMutating || !isReportWindow(draftWindow)) return;
+    setRejectDraft(null);
+    setWindow(draftWindow);
+    setAppliedMode(draftMode);
+    onCloseFilters();
+  };
+  const approveRecord = async (record: ManualDailyRecord) => {
+    if (actionsDisabled || !pendingIds.has(record.id)) return;
+    await approveOne(record.id);
+  };
+  const approveAll = async (ids: number[]) => {
+    if (actionsDisabled || ids.length === 0 || ids.some((id) => !pendingIds.has(id))) return;
+    const result = await bulkApprove(ids);
+    if (!("error" in result) && result.data.skipped.length > 0) {
+      notifyInfo(`${result.data.approved.length} approved, ${result.data.skipped.length} skipped (already decided).`);
+    }
+  };
+  const openReject = (ids: number[], bulk: boolean) => {
+    if (actionsDisabled || ids.length === 0 || ids.some((id) => !pendingIds.has(id))) return;
+    setRejectDraft({ date, ids, reason: "", bulk });
+  };
+  const submitReject = async () => {
+    if (actionsDisabled || !rejectDraft || rejectDraft.date !== date) return;
+    const ids = rejectDraft.ids.filter((id) => pendingIds.has(id));
+    if (ids.length === 0) {
+      notifyInfo("These records are no longer pending. Refresh the team records to see their latest status.");
+      setRejectDraft(null);
+      return;
+    }
+    const reason = rejectDraft.reason.trim() || null;
+    if (rejectDraft.bulk) {
+      const result = await bulkReject(ids.map((id) => ({ id, reason })));
+      if (!("error" in result)) {
+        const skipped = result.data.skipped.length + rejectDraft.ids.length - ids.length;
+        if (skipped > 0) notifyInfo(`${result.data.rejected.length} rejected, ${skipped} skipped (already decided).`);
+        setRejectDraft(null);
+      }
+    } else {
+      const result = await rejectOne({ id: ids[0], reason });
+      if (!("error" in result)) setRejectDraft(null);
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-4">
+      <Drawer open={filtersOpen} onClose={closeFilters} title="Manual report filters"
+        description="Choose a day, month, or custom date range." widthClass="max-w-md">
+        <div className="flex flex-col gap-6">
+          <ManualReportFilters mode={draftMode} value={draftWindow} onModeChange={setDraftMode} onChange={setDraftWindow} />
+          <div className="grid grid-cols-2 gap-3 border-t border-border pt-5">
+            <Button type="button" className="w-full" disabled={isMutating || !isReportWindow(draftWindow)} onClick={applyFilters}>Apply filters</Button>
+            <Button type="button" variant="ghost" className="w-full" onClick={closeFilters}>Cancel</Button>
+          </div>
+        </div>
+      </Drawer>
+      {isError && <ErrorState message={`Couldn't load team records. ${getErrorMessage(error)}`} onRetry={refetch} />}
+      {!isError && !report && <LoadingState label="Loading team records…" />}
+      {!isError && report && !team && <EmptyState title="No team records for this period" />}
+      {!isError && report && team && (
+        <>
+          {isFetching && <p role="status" className="text-sm text-content-muted">Updating team records…</p>}
+          <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] lg:items-start">
+            <div>
+              <h3 className="font-semibold text-content-primary">My team · {period}</h3>
+              <p className="text-sm text-content-muted">{team.coders.filter((coder) => coder.records.length > 0).length} of {team.coders.length} coders submitted {dayView ? "for this day" : "in this period"}.</p>
+            </div>
+            <ProductionCards teams={[team]} label="My team production" compact />
+          </div>
+          <div className="flex flex-col gap-2">
+            <h4 className="text-sm font-semibold text-content-secondary">My {dayView ? "daily record" : "records"}</h4>
+            {dayView ? (
+              <TeamRecordsTable
+                entries={[{ user: team.lead!, record: team.leadRecords[0] ?? null }]}
+                caption={`My daily record for ${date}`}
+                renderActions={canReview && onEditOwnRecord && team.leadRecords[0] ? ({ record }) => (
+                  record && <Button type="button" variant="secondary" disabled={actionsDisabled} onClick={() => onEditOwnRecord(record)}>Edit</Button>
+                ) : undefined}
+              />
+            ) : (
+              <PeriodRecordsTable entries={[{ user: team.lead!, records: team.leadRecords }]} caption={`My records for ${period}`} multipleDays />
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-sm font-semibold text-content-secondary">Coder {dayView ? "daily records" : "records"}</h4>
+              {canReview && dayView && (
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="secondary" disabled={actionsDisabled || pendingIds.size === 0} isLoading={isBulkApproving} onClick={() => void approveAll([...pendingIds])}>Approve all ({pendingIds.size})</Button>
+                  <Button type="button" variant="danger" disabled={actionsDisabled || pendingIds.size === 0} onClick={() => openReject([...pendingIds], true)}>Reject all ({pendingIds.size})</Button>
+                </div>
+              )}
+            </div>
+            {team.coders.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border p-4 text-sm text-content-muted">No coders assigned to your team for this period.</p>
+            ) : dayView ? (
+              <TeamRecordsTable
+                entries={team.coders.map(({ user: coder, records }) => ({ user: coder, record: records[0] ?? null }))}
+                caption={`Coder records for ${date}`}
+                renderActions={canReview ? ({ user: coder, record }) => (
+                  record && pendingIds.has(record.id) ? (
+                    <div className="flex gap-2">
+                      <Button type="button" variant="secondary" disabled={actionsDisabled} aria-label={`Approve ${userName(coder)}'s record`} onClick={() => void approveRecord(record)}>Approve</Button>
+                      <Button type="button" variant="danger" disabled={actionsDisabled} aria-label={`Reject ${userName(coder)}'s record`} onClick={() => openReject([record.id], false)}>Reject</Button>
+                    </div>
+                  ) : null
+                ) : undefined}
+              />
+            ) : (
+              <PeriodRecordsTable entries={team.coders} caption={`Coder records for ${period}`} multipleDays />
+            )}
+            {!dayView && <p className="text-xs text-content-muted">Select a single day to approve or reject individual records.</p>}
+          </div>
+        </>
+      )}
+      {rejectDraft && rejectDraft.date === date && (
+        <Drawer open onClose={() => { if (!isMutating) setRejectDraft(null); }}
+          title={rejectDraft.bulk ? `Reject ${rejectDraft.ids.length} pending records?` : "Reject this record?"}
+          description={rejectDraft.bulk ? `The same optional reason will be added to each selected record for ${date}.` : `Let the coder know what to fix for ${date}.`}
+          widthClass="max-w-md">
+          <label htmlFor="manual-team-rejection-reason" className="mb-2 block text-sm font-medium text-content-secondary">Reason (optional)</label>
+          <textarea id="manual-team-rejection-reason" className={`${inputClasses} w-full`} rows={4}
+            value={rejectDraft.reason} disabled={isMutating} onChange={(event) => setRejectDraft({ ...rejectDraft, reason: event.target.value })} />
+          <div className="mt-4 flex justify-end gap-2">
+            <Button type="button" variant="secondary" disabled={isMutating} onClick={() => setRejectDraft(null)}>Cancel</Button>
+            <Button type="button" variant="danger" disabled={actionsDisabled} isLoading={isRejectingOne || isBulkRejecting} onClick={() => void submitReject()}>{rejectDraft.bulk ? "Reject all" : "Reject"}</Button>
+          </div>
+        </Drawer>
+      )}
+    </section>
   );
 }

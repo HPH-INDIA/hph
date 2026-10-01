@@ -4,6 +4,7 @@ import { useLocation } from "react-router-dom";
 
 import { useWhoamiQuery } from "@/api/authApi";
 import { useAuth } from "@/features/auth/useAuth";
+import { UploadStatusWidget } from "@/features/uploads/UploadStatusWidget";
 import { LoadingState } from "@/components/ui/StateViews";
 import { ToastContainer } from "@/components/ui/ToastContainer";
 import { AppRoutes } from "@/routes/AppRoutes";
@@ -34,6 +35,7 @@ export default function App() {
         <AppRoutes />
       )}
       <ToastContainer />
+      {user && <UploadStatusWidget />}
     </>
   );
 }

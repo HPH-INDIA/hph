@@ -87,12 +87,29 @@ export async function parseManualBulkFile(
       return { ...empty, sheetName, fileErrors: [`Missing required column(s): ${missing.join(", ")}.`] };
     }
 
-    const usersByName = new Map<string, AdminUser[]>();
+    const matchesByName = new Map<string, AdminUser[]>();
+    const flexibleCandidates: { user: AdminUser; tokens: string[] }[] = [];
     for (const user of users) {
       if (!["lead", "employee"].includes(user.role.roleType)) continue;
-      const name = normalizeName(`${user.first_name} ${user.last_name}`);
-      usersByName.set(name, [...(usersByName.get(name) ?? []), user]);
+      const fullName = `${user.first_name} ${user.last_name}`;
+      const name = normalizeName(fullName);
+      matchesByName.set(name, [...(matchesByName.get(name) ?? []), user]);
+      const tokens = [...nameTokens(fullName)];
+      if (tokens.length >= 2) flexibleCandidates.push({ user, tokens });
     }
+
+    // Exact names are already indexed; resolve each other name once per workbook.
+    const matchesForName = (rawName: string) => {
+      const name = normalizeName(rawName);
+      const cached = matchesByName.get(name);
+      if (cached) return cached;
+      const suppliedTokens = nameTokens(rawName);
+      const matches = flexibleCandidates
+        .filter(({ tokens }) => tokens.every((token) => suppliedTokens.has(token)))
+        .map(({ user }) => user);
+      matchesByName.set(name, matches);
+      return matches;
+    };
 
     const at = (values: unknown[], header: (typeof MANUAL_MTD_HEADERS)[number]) =>
       values[indexes.get(normalizeHeader(header)) as number];
@@ -107,14 +124,7 @@ export async function parseManualBulkFile(
       const date = parseDate(at(values, "Date"));
       const errors: string[] = [];
       if (!rawName) errors.push("Coder name is required");
-      const exactMatches = usersByName.get(normalizeName(rawName)) ?? [];
-      const suppliedTokens = nameTokens(rawName);
-      const flexibleMatches = users.filter((candidate) => {
-        if (!["lead", "employee"].includes(candidate.role.roleType)) return false;
-        const candidateTokens = nameTokens(`${candidate.first_name} ${candidate.last_name}`);
-        return candidateTokens.size >= 2 && [...candidateTokens].every((token) => suppliedTokens.has(token));
-      });
-      const matches = exactMatches.length > 0 ? exactMatches : flexibleMatches;
+      const matches = matchesForName(rawName);
       if (rawName && matches.length === 0) errors.push(`No user matches coder name "${rawName}"`);
       if (matches.length > 1) errors.push(`Coder name "${rawName}" matches multiple users`);
       if (!date) errors.push("Date is not recognized");
