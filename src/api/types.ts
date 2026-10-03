@@ -615,6 +615,37 @@ export interface KaironCompletedDailyCount {
   count: number;
 }
 
+export interface KaironChartSummary {
+  pvp: number;
+  foundation: number;
+  onHold: number;
+  total: number;
+}
+
+export interface KaironLeadTeamRange {
+  fromDate: string;
+  toDate: string;
+  lead: ManualTeamUser;
+  leadDays: KaironCompletedDailyCount[];
+  leadSummary: KaironChartSummary;
+  coders: Array<{
+    user: ManualTeamUser;
+    days: KaironCompletedDailyCount[];
+    count: number;
+    summary: KaironChartSummary;
+  }>;
+}
+
+export interface KaironManagerTeamRange {
+  fromDate: string;
+  toDate: string;
+  teams: Array<{
+    lead: ManualTeamUser | null;
+    leadSummary: KaironChartSummary;
+    coders: Array<{ user: ManualTeamUser; summary: KaironChartSummary }>;
+  }>;
+}
+
 export interface KaironCompletedUserSummary {
   userId: number;
   firstName: string;
@@ -629,6 +660,12 @@ export interface KaironCompletedUserQuery extends PaginationQuery {
 
 export interface KaironCompletedRecordQuery extends PaginationQuery {
   completedDate: string;
+  userId: number;
+}
+
+export interface KaironTeamRecordQuery extends PaginationQuery {
+  fromDate: string;
+  toDate: string;
   userId: number;
 }
 

@@ -15,6 +15,9 @@ import type {
   KaironCompletedRecordQuery,
   KaironCompletedUserQuery,
   KaironCompletedUserSummary,
+  KaironLeadTeamRange,
+  KaironManagerTeamRange,
+  KaironTeamRecordQuery,
   ManualDailyRecord,
   ManualDailyRecordQuery,
   ManualTeamDay,
@@ -44,17 +47,29 @@ export const reportsApi = apiSlice.injectEndpoints({
       query: (args) => ({ url: `/reports/kairon/completed-records${buildQueryString({ ...args })}` }),
       providesTags: (result) => providesList("KaironChartRecords", result?.items),
     }),
-    deleteKaironRecord: builder.mutation<{ id: number }, number>({
-      query: (recordId) => ({ url: `/reports/kairon/records/${recordId}`, method: "DELETE" }),
-      invalidatesTags: (_result, _error, recordId) => [
-        { type: "KaironChartRecords", id: recordId },
+    getKaironLeadTeamRange: builder.query<KaironLeadTeamRange, { fromDate: string; toDate: string }>({
+      query: (args) => ({ url: `/reports/kairon/team-range${buildQueryString(args)}` }),
+      providesTags: [
         { type: "KaironChartRecords", id: "LIST" },
-        { type: "KaironUploadBatches", id: "LIST" },
-        { type: "CodingDashboard" },
+        { type: "Team" },
+        { type: "Users", id: "LIST" },
       ],
-      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
-        await notifyOnSettle(dispatch, queryFulfilled);
-      },
+    }),
+    getKaironManagerTeamRange: builder.query<KaironManagerTeamRange, { fromDate: string; toDate: string }>({
+      query: (args) => ({ url: `/reports/kairon/manager-team-range${buildQueryString(args)}` }),
+      providesTags: [
+        { type: "KaironChartRecords", id: "LIST" },
+        { type: "Team" },
+        { type: "Users", id: "LIST" },
+      ],
+    }),
+    getKaironTeamHolds: builder.query<PaginatedResult<KaironChartRecord>, PaginationQuery>({
+      query: (args) => ({ url: `/reports/kairon/team-holds${buildQueryString(args)}` }),
+      providesTags: (result) => providesList("KaironChartRecords", result?.items),
+    }),
+    getKaironTeamRecords: builder.query<PaginatedResult<KaironChartRecord>, KaironTeamRecordQuery>({
+      query: (args) => ({ url: `/reports/kairon/team-records${buildQueryString(args)}` }),
+      providesTags: (result) => providesList("KaironChartRecords", result?.items),
     }),
     getMyManualRecords: builder.query<PaginatedResult<ManualDailyRecord>, PaginationQuery | void>({
       query: (args) => ({ url: `/reports/manual${buildQueryString({ ...args })}` }),
@@ -116,7 +131,10 @@ export const {
   useGetKaironCompletedCountsQuery,
   useGetKaironCompletedUsersQuery,
   useGetKaironCompletedRecordsQuery,
-  useDeleteKaironRecordMutation,
+  useGetKaironLeadTeamRangeQuery,
+  useGetKaironManagerTeamRangeQuery,
+  useGetKaironTeamHoldsQuery,
+  useGetKaironTeamRecordsQuery,
   useGetMyManualRecordsQuery,
   useGetManualTeamDayQuery,
   useGetManualTeamRangeQuery,
