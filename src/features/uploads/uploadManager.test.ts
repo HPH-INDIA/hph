@@ -1,332 +1,139 @@
-// Run: node_modules/.bin/esbuild src/features/uploads/uploadManager.test.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.app.json --outfile=/tmp/hph-upload-tests.mjs && node --test /tmp/hph-upload-tests.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { FileImportProgress, PreparedFileImport } from "@/api/fileImportsApi";
+import { UploadManager, type UploadTransport, type UploadInput } from "./uploadManager";
+import { buildImportFile, uploadImportFile } from "./importFile";
 
-import type {
-  KaironChartRowInput,
-  KaironImportChunkPayload,
-  KaironImportProgress,
-  ManualDailyRecord,
-  ManualImportProgress,
-  ManualImportRow,
-} from "@/api/types";
-import { IMPORT_CHUNK_SIZE } from "@/lib/imports";
-
-import { UploadManager, type UploadInput, type UploadTransport } from "./uploadManager";
-
-const manualRow = (userId = 1): ManualImportRow => ({
-  userId, date: "2026-09-30", productionCount: 4, techIssuesDowntimeHours: 1,
-  noInventoryIdleTimeHours: 2, leaveHours: 3, meetingEngagementHours: 4,
-});
-const chartRow = (): KaironChartRowInput => ({
-  mbi: "test-identifier", program: "test", level: "1LR",
-  status: "Completed", codingAnalyst: "Test Analyst",
-  actions: 1, lastAction: null, created: "2026-09-30", completed: null, tat: null, age: null, practice: null,
-});
-function manual(rows = [manualRow()], checksum = "manual-checksum"): UploadInput {
-  return { kind: "manual", fileName: `${checksum}.xlsx`, fileChecksum: checksum, rows, minDate: "2026-09-30", maxDate: "2026-09-30" };
+function progress(id: string, status: FileImportProgress["status"] = "queued", totalRows = 1): FileImportProgress {
+  return { id, kind: "kairon", sourceFilename: "test.csv", status, totalRows, processedCount: status === "completed" ? totalRows : 0,
+    insertedCount: 0, createdCount: 0, updatedCount: 0, unchangedCount: 0, rejectedCount: 0, unmatchedCount: 0,
+    error: null, createdAt: "2026-10-03", completedAt: null };
 }
-function kairon(count = 1, checksum = "kairon-checksum"): UploadInput {
-  return { kind: "kairon", fileName: "charts.csv", fileChecksum: checksum, rows: Array.from({ length: count }, chartRow) };
-}
-function progress(id: number, totalRows: number, processedCount = 0): KaironImportProgress {
-  return {
-    id, totalRows, processedCount, status: "uploading", sourceFilename: "test.csv",
-    insertedCount: 0, updatedCount: 0, unchangedCount: 0, rejectedCount: 0, unmatchedCount: 0,
-    uploadedAt: "2026-10-01", completedAt: null,
-  };
-}
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
-  return { promise, resolve, reject };
+function input(count = 1): UploadInput {
+  return { kind: "kairon", fileName: "test.csv", fileChecksum: "a".repeat(64), rows: Array.from({ length: count }, (_, index) => ({
+    mbi: `synthetic-${index}`, program: "PVP", level: "1LR", status: "Active", codingAnalyst: "Test Analyst", actions: 0,
+    lastAction: null, created: "2026-10-03", completed: null, tat: null, age: null, practice: null,
+  })) };
 }
 async function until(check: () => boolean) {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (check()) return;
-    await new Promise<void>((resolve) => setImmediate(resolve));
-  }
-  assert.fail("Upload did not reach the expected state");
+  for (let attempt = 0; attempt < 100; attempt++) { if (check()) return; await new Promise<void>((resolve) => setImmediate(resolve)); }
+  assert.fail("Expected state was not reached");
 }
-
 function harness(overrides: Partial<UploadTransport> = {}) {
-  let nextId = 0;
-  const imports = new Map<number, KaironImportProgress>();
-  const calls = { start: [] as string[], chunks: [] as KaironImportChunkPayload[], complete: [] as number[], compare: 0 };
+  const calls: string[] = [];
+  let prepared: PreparedFileImport;
   const transport: UploadTransport = {
-    async listManualRecords() { calls.compare++; return []; },
-    async startKairon(payload) {
-      calls.start.push(payload.fileChecksum);
-      const started = progress(++nextId, payload.totalRows);
-      imports.set(started.id, started);
-      return started;
-    },
-    async uploadKairon(payload) {
-      calls.chunks.push(payload);
-      const current = imports.get(payload.importId)!;
-      const next = { ...current, processedCount: current.processedCount + payload.rows.length };
-      imports.set(next.id, next);
-      return next;
-    },
-    async completeKairon(id) {
-      calls.complete.push(id);
-      return { ...imports.get(id)!, status: "completed" };
-    },
-    async startManual(payload, signal) {
-      const started = await transport.startKairon(payload, signal);
-      return { ...started, sourceFilename: payload.sourceFilename, status: "uploading", createdCount: 0 };
-    },
-    async uploadManual(payload, signal) {
-      const next = await transport.uploadKairon(payload as unknown as KaironImportChunkPayload, signal);
-      return { ...next, sourceFilename: "test.xlsx", status: "uploading", createdCount: 0 };
-    },
-    async completeManual(id, signal) {
-      const completed = await transport.completeKairon(id, signal);
-      return { ...completed, sourceFilename: "test.xlsx", status: "completed", createdCount: 0 };
-    },
-    ...overrides,
+    async prepare(body) { calls.push("prepare"); prepared = { ...progress(body.requestId, "uploading", body.totalRows),
+      signedUrl: "https://test.supabase.co/upload", encryptionKey: btoa("x".repeat(32)), maxFileBytes: 50_000_000 }; return prepared; },
+    async upload() { calls.push("upload"); },
+    async complete(body) { calls.push("complete"); return progress(body.id, "queued", prepared.totalRows); },
+    async get(id) { calls.push("get"); return progress(id, "completed", prepared?.totalRows ?? 1); },
+    async list() { return []; },
+    async retry(id) { calls.push("retry"); return progress(id); },
+    async abandon(id) { calls.push("abandon"); return progress(id, "abandoned"); },
+    invalidate() { calls.push("invalidate"); }, ...overrides,
   };
-  let hashes = 0;
-  const manager = new UploadManager(transport, async () => `checksum-${++hashes}`);
-  return { manager, transport, calls, hashes: () => hashes };
+  const files: Blob[] = [];
+  const manager = new UploadManager(transport, async (_id, _key, rows) => {
+    const blob = new Blob([JSON.stringify(rows)]); files.push(blob); return { blob, checksum: "b".repeat(64) };
+  }, async () => {});
+  return { manager, calls, transport, files };
 }
 
-test("registers before comparison and runs Kairon/manual independently after all listeners unmount", async () => {
-  const comparison = deferred<ManualDailyRecord[]>();
-  const { manager, calls } = harness({ listManualRecords: () => comparison.promise });
-  const unsubscribe = manager.subscribe(() => {});
-  const manualId = manager.start(manual());
-  assert.equal(manager.getSnapshot()[0].status, "preparing");
-  assert.deepEqual(calls.start, []);
-  const kaironId = manager.start(kairon());
-  unsubscribe(); // Closing a drawer / navigating has no influence on the runner.
-  await until(() => manager.getSnapshot().find((job) => job.id === kaironId)?.status === "completed");
-  assert.equal(manager.getSnapshot().find((job) => job.id === manualId)?.status, "preparing");
-  comparison.resolve([]);
-  await until(() => manager.getSnapshot().every((job) => job.status === "completed"));
-  assert.equal(calls.complete.length, 2);
+test("50,000 rows transfer as one file, then queue and poll", async () => {
+  const { manager, calls, files } = harness(); manager.start(input(50_000));
+  await until(() => manager.getSnapshot()[0].status === "completed");
+  assert.deepEqual(calls, ["prepare", "upload", "complete", "get", "invalidate"]);
+  assert.equal(files.length, 1); assert.equal(manager.getSnapshot()[0].processedCount, 50_000);
 });
 
-test("two different manual files keep distinct imports and completion state", async () => {
-  const first = deferred<ManualImportProgress>();
-  const { manager, transport, calls } = harness();
-  const upload = transport.uploadManual;
-  transport.uploadManual = async (payload, signal) => {
-    const result = await upload(payload, signal);
-    return payload.rows[0].userId === 1 ? first.promise : result;
+test("a lost completion response retries confirmation without repeating the transfer", async () => {
+  const { manager, transport, calls } = harness(); const complete = transport.complete; let failed = false;
+  transport.complete = async (body, signal) => { if (!failed) { failed = true; throw new Error("Response lost"); } return complete(body, signal); };
+  const id = manager.start(input()); await until(() => manager.getSnapshot()[0].status === "failed");
+  manager.retry(id); manager.retry(id);
+  await until(() => manager.getSnapshot()[0].status === "completed");
+  assert.equal(calls.filter((call) => call === "upload").length, 1);
+  assert.equal(calls.filter((call) => call === "prepare").length, 1);
+});
+
+test("transfer retries retain exactly the same encrypted file", async () => {
+  const { manager, transport, files } = harness(); let attempts = 0; const seen: Blob[] = [];
+  transport.get = async (id) => progress(id, attempts < 2 ? "uploading" : "completed");
+  transport.upload = async (_url, blob) => { seen.push(blob); if (++attempts === 1) throw new Error("Network interruption"); };
+  const id = manager.start(input()); await until(() => manager.getSnapshot()[0].status === "failed");
+  manager.retry(id); await until(() => manager.getSnapshot()[0].status === "completed");
+  assert.equal(files.length, 1); assert.equal(seen[0], seen[1]);
+});
+
+test("login recovers a queued server import without uploading again", async () => {
+  const { manager, calls } = harness({ async list() { return [progress("existing")]; } });
+  manager.setSession(1); await until(() => manager.getSnapshot()[0]?.status === "completed");
+  assert.deepEqual(calls, ["get", "invalidate"]);
+});
+
+test("logout aborts the transfer and late responses do not restore cleared jobs", async () => {
+  let resolve!: () => void; let signal!: AbortSignal;
+  const { manager, calls } = harness({ upload: async (_url, _blob, _transfer, requestSignal) => {
+    signal = requestSignal; await new Promise<void>((res) => { resolve = res; });
+  } });
+  manager.start(input()); await until(() => Boolean(resolve)); manager.clear(); assert.equal(signal.aborted, true);
+  resolve(); await new Promise<void>((res) => setImmediate(res)); assert.deepEqual(manager.getSnapshot(), []);
+  assert.equal(calls.includes("complete"), false);
+});
+
+test("encrypted file blocks decrypt with the import ID and do not contain raw identifiers", async () => {
+  const rows = input(1001).rows; const keyBytes = crypto.getRandomValues(new Uint8Array(32));
+  const keyString = btoa(String.fromCharCode(...keyBytes)); const id = crypto.randomUUID();
+  const { blob } = await buildImportFile(id, keyString, rows, 50_000_000, new AbortController().signal);
+  const text = await blob.text(); assert.equal(text.includes("synthetic-"), false);
+  const key = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["decrypt"]);
+  const blocks = text.trim().split("\n"); assert.equal(blocks.length, 2);
+  const decoded: unknown[] = [];
+  for (const [index, line] of blocks.entries()) {
+    const bytes = Uint8Array.from(atob(line), (c) => c.charCodeAt(0));
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12),
+      additionalData: new TextEncoder().encode(`hph-import:v1:${id}:${index}`) }, key, bytes.slice(12));
+    decoded.push(...JSON.parse(new TextDecoder().decode(plain)));
+    await assert.rejects(crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12),
+      additionalData: new TextEncoder().encode(`hph-import:v1:wrong:${index}`) }, key, bytes.slice(12)));
+  }
+  assert.deepEqual(decoded, rows);
+});
+
+test("TUS resumes from the server offset instead of restarting the file", async () => {
+  const original = globalThis.fetch; const requests: { method: string; offset: string | null; size: number }[] = [];
+  globalThis.fetch = async (_url, init) => {
+    const headers = new Headers(init?.headers);
+    requests.push({ method: init!.method!, offset: headers.get("Upload-Offset"), size: (init?.body as Blob)?.size ?? 0 });
+    return new Response(null, { status: 204, headers: { "Upload-Offset": init?.method === "HEAD" ? "4" : "10" } });
   };
-  const firstId = manager.start(manual([manualRow(1)], "first"));
-  const secondId = manager.start(manual([manualRow(2)], "second"));
-  assert.notEqual(firstId, secondId);
-  await until(() => manager.getSnapshot().find((job) => job.id === secondId)?.status === "completed");
-  assert.equal(manager.getSnapshot().find((job) => job.id === firstId)?.status, "uploading");
-  const firstImportId = calls.chunks.find((chunk) => (chunk.rows as unknown as ManualImportRow[])[0].userId === 1)!.importId;
-  first.resolve({ ...progress(firstImportId, 1, 1), sourceFilename: "first.xlsx", status: "uploading", createdCount: 1 });
-  await until(() => manager.getSnapshot().every((job) => job.status === "completed"));
-  assert.equal(new Set(calls.complete).size, 2);
+  try {
+    const transfer = { url: "https://test.storage.supabase.co/storage/v1/upload/resumable/session" };
+    await uploadImportFile("https://test.supabase.co/storage/v1/object/upload/sign/hph-imports/kairon/test.hph-import?token=token",
+      new Blob(["0123456789"]), transfer, new AbortController().signal, () => {});
+    assert.deepEqual(requests, [{ method: "HEAD", offset: null, size: 0 }, { method: "PATCH", offset: "4", size: 6 }]);
+  } finally { globalThis.fetch = original; }
 });
 
-test("retries only the failed chunk with exactly the same rows/checksum and guards double Retry", async () => {
-  const { manager, transport, calls, hashes } = harness();
-  const original = transport.uploadKairon;
-  const attempts: KaironImportChunkPayload[] = [];
-  let failed = false;
-  transport.uploadKairon = async (payload, signal) => {
-    attempts.push(payload);
-    if (payload.chunkNumber === 1 && !failed) { failed = true; throw new Error("Temporary failure"); }
-    return original(payload, signal);
+
+test("signed TUS creation uses the signed endpoint and upload content type", async () => {
+  const original = globalThis.fetch;
+  let created = false;
+  globalThis.fetch = async (url, init) => {
+    if (init?.method === "POST") {
+      assert.equal(String(url), "https://test.storage.supabase.co/storage/v1/upload/resumable/sign");
+      const headers = new Headers(init.headers);
+      assert.equal(headers.get("Content-Type"), "application/offset+octet-stream");
+      assert.equal(headers.get("x-signature"), "token");
+      created = true;
+      return new Response(null, { status: 201, headers: { Location: "https://test.storage.supabase.co/storage/v1/upload/resumable/sign/session" } });
+    }
+    return new Response(null, { status: 204, headers: { "Upload-Offset": init?.method === "HEAD" ? "0" : "4" } });
   };
-  const input = kairon(IMPORT_CHUNK_SIZE * 2 + 1);
-  const id = manager.start(input);
-  input.rows[0] = chartRow();
-  (input.rows[0] as KaironChartRowInput).mbi = "changed-after-submit";
-  await until(() => manager.getSnapshot()[0].status === "failed");
-  assert.equal(manager.getSnapshot()[0].processedCount, IMPORT_CHUNK_SIZE);
-  assert.equal(manager.getSnapshot()[0].error, "Temporary failure");
-  assert.equal(attempts[0].rows[0].mbi, "test-identifier");
-  manager.retry(id);
-  manager.retry(id);
-  await until(() => manager.getSnapshot()[0].status === "completed");
-  assert.deepEqual(attempts.map((chunk) => chunk.chunkNumber), [0, 1, 1, 2]);
-  assert.deepEqual(attempts[1], attempts[2]);
-  assert.equal(hashes(), 3);
-  assert.equal(calls.start.length, 1);
-});
-
-test("retries completion without repeating acknowledged chunks", async () => {
-  const { manager, transport, calls } = harness();
-  const complete = transport.completeKairon;
-  let attempts = 0;
-  transport.completeKairon = (id, signal) => {
-    if (++attempts === 1) return Promise.reject(new Error("Completion response lost"));
-    return complete(id, signal);
-  };
-  const id = manager.start(kairon());
-  await until(() => manager.getSnapshot()[0].status === "failed");
-  manager.retry(id);
-  await until(() => manager.getSnapshot()[0].status === "completed");
-  assert.equal(attempts, 2);
-  assert.equal(calls.chunks.length, 1);
-  assert.equal(calls.start.length, 1);
-});
-
-test("an incomplete acknowledgement preserves the original chunk for retry", async () => {
-  const { manager, transport } = harness();
-  const attempts: KaironImportChunkPayload[] = [];
-  transport.uploadKairon = async (payload) => {
-    attempts.push(payload);
-    return progress(payload.importId, 2, attempts.length === 1 ? 1 : 2);
-  };
-  transport.completeKairon = async (id) => ({ ...progress(id, 2, 2), status: "completed" });
-  const id = manager.start(kairon(2));
-  await until(() => manager.getSnapshot()[0].status === "failed");
-  manager.retry(id);
-  await until(() => manager.getSnapshot()[0].status === "completed");
-  assert.deepEqual(attempts[0], attempts[1]);
-  assert.equal(attempts.length, 2);
-});
-
-test("manual comparison checks all five fields once and retains candidates after a start failure", async () => {
-  const same = manualRow(1);
-  const changed = manualRow(2);
-  const record = (row: ManualImportRow) => ({
-    ...row, techIssuesDowntimeHours: `${row.techIssuesDowntimeHours}.00`,
-    noInventoryIdleTimeHours: String(row.noInventoryIdleTimeHours), leaveHours: String(row.leaveHours),
-    meetingEngagementHours: String(row.meetingEngagementHours),
-  }) as ManualDailyRecord;
-  let comparisons = 0;
-  const { manager, transport, calls } = harness({
-    async listManualRecords() { comparisons++; return [record(same), { ...record(changed), meetingEngagementHours: "4.5" }]; },
-  });
-  const start = transport.startManual;
-  let attempts = 0;
-  transport.startManual = (payload, signal) => ++attempts === 1
-    ? Promise.reject(new Error("Start unavailable")) : start(payload, signal);
-  const id = manager.start(manual([same, changed, manualRow(3)]));
-  await until(() => manager.getSnapshot()[0].status === "failed");
-  assert.deepEqual(manager.getSnapshot()[0].comparison, { newCount: 1, modifiedCount: 1, unchangedCount: 1 });
-  manager.retry(id);
-  await until(() => manager.getSnapshot()[0].status === "completed");
-  assert.equal(comparisons, 1);
-  assert.equal(manager.getSnapshot()[0].totalRows, 2);
-  assert.deepEqual((calls.chunks[0].rows as unknown as ManualImportRow[]).map((row) => row.userId), [2, 3]);
-});
-
-test("all unchanged manual records finish without creating an import", async () => {
-  const row = manualRow();
-  const { manager, calls } = harness({
-    async listManualRecords() { return [{ ...row } as unknown as ManualDailyRecord]; },
-  });
-  manager.start(manual([row]));
-  await until(() => manager.getSnapshot()[0].status === "completed");
-  assert.deepEqual(manager.getSnapshot()[0].comparison, { newCount: 0, modifiedCount: 0, unchangedCount: 1 });
-  assert.equal(calls.start.length, 0);
-  assert.equal(calls.chunks.length, 0);
-  assert.equal(calls.complete.length, 0);
-});
-
-test("resumes a backend import from acknowledged rows and skips a backend-completed import", async () => {
-  const { manager, transport, calls } = harness();
-  transport.startKairon = async () => progress(99, IMPORT_CHUNK_SIZE + 1, IMPORT_CHUNK_SIZE);
-  transport.uploadKairon = async (payload) => {
-    calls.chunks.push(payload);
-    return progress(99, IMPORT_CHUNK_SIZE + 1, IMPORT_CHUNK_SIZE + 1);
-  };
-  transport.completeKairon = async () => ({ ...progress(99, IMPORT_CHUNK_SIZE + 1, IMPORT_CHUNK_SIZE + 1), status: "completed" });
-  manager.start(kairon(IMPORT_CHUNK_SIZE + 1));
-  await until(() => manager.getSnapshot()[0].status === "completed");
-  assert.equal(calls.chunks[0].chunkNumber, 1);
-  assert.equal(calls.chunks[0].rows.length, 1);
-  transport.startKairon = async () => ({ ...progress(100, 1, 1), status: "completed" });
-  manager.start(kairon(1, "already-completed"));
-  await until(() => manager.getSnapshot().every((job) => job.status === "completed"));
-  assert.equal(calls.chunks.length, 1);
-});
-
-test("a failed backend import does not send chunks or complete", async () => {
-  const { manager, calls } = harness({ startKairon: async () => ({ ...progress(1, 1), status: "failed" }) });
-  const id = manager.start(kairon());
-  await until(() => manager.getSnapshot()[0].status === "failed");
-  manager.retry(id);
-  await until(() => manager.getSnapshot()[0].status === "failed");
-  assert.match(manager.getSnapshot()[0].error!, /server marked this import as failed/);
-  assert.equal(calls.chunks.length, 0);
-  assert.equal(calls.complete.length, 0);
-});
-
-test("same type and checksum deduplicate active/failed work; dismiss releases failed work", async () => {
-  const failure = deferred<KaironImportProgress>();
-  const { manager } = harness({ startKairon: () => failure.promise });
-  const id = manager.start(kairon());
-  assert.equal(manager.start(kairon()), id);
-  manager.dismiss(id);
-  assert.equal(manager.getSnapshot().length, 1);
-  failure.reject(new Error("Offline"));
-  await until(() => manager.getSnapshot()[0].status === "failed");
-  assert.equal(manager.start(kairon()), id);
-  manager.dismiss(id);
-  assert.equal(manager.getSnapshot().length, 0);
-  assert.notEqual(manager.start(kairon()), id);
-  await until(() => manager.getSnapshot()[0].status === "failed");
-});
-
-test("clear aborts an in-flight chunk, prevents later chunks, and ignores a late response", async () => {
-  const pending = deferred<KaironImportProgress>();
-  let requestSignal: AbortSignal | undefined;
-  const { manager, transport, calls } = harness();
-  transport.uploadKairon = async (payload, signal) => { calls.chunks.push(payload); requestSignal = signal; return pending.promise; };
-  manager.start(kairon(IMPORT_CHUNK_SIZE + 1));
-  await until(() => calls.chunks.length === 1);
-  manager.clear();
-  assert.equal(requestSignal?.aborted, true);
-  const emptySnapshot = manager.getSnapshot();
-  pending.resolve(progress(1, IMPORT_CHUNK_SIZE + 1, IMPORT_CHUNK_SIZE));
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(manager.getSnapshot(), emptySnapshot);
-  assert.equal(manager.getSnapshot().length, 0);
-  assert.equal(calls.chunks.length, 1);
-  assert.equal(calls.complete.length, 0);
-});
-
-test("clearing during comparison prevents starting any import", async () => {
-  const pending = deferred<ManualDailyRecord[]>();
-  const { manager, calls } = harness({ listManualRecords: () => pending.promise });
-  manager.start(manual());
-  manager.clear();
-  pending.resolve([]);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.deepEqual(manager.getSnapshot(), []);
-  assert.equal(calls.start.length, 0);
-});
-
-test("session refresh retains uploads; switching user or losing authentication clears them", async () => {
-  const pending = deferred<KaironImportProgress>();
-  const { manager, calls } = harness({ startKairon: () => pending.promise });
-  manager.setSession(1);
-  manager.start(kairon());
-  const current = manager.getSnapshot();
-  manager.setSession(1); // whoami loading retains the current user's id.
-  assert.equal(manager.getSnapshot(), current);
-  manager.setSession(2);
-  assert.deepEqual(manager.getSnapshot(), []);
-  pending.resolve(progress(1, 1));
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(calls.chunks.length, 0);
-  manager.start(kairon());
-  manager.setSession(null); // logout or whoami rejected.
-  assert.deepEqual(manager.getSnapshot(), []);
-});
-
-test("snapshot identity is stable between state changes and completed jobs can be dismissed", async () => {
-  const { manager } = harness();
-  assert.equal(manager.getSnapshot(), manager.getSnapshot());
-  const id = manager.start(kairon());
-  await until(() => manager.getSnapshot()[0].status === "completed");
-  const completed = manager.getSnapshot();
-  assert.equal(manager.getSnapshot(), completed);
-  manager.retry(id);
-  assert.equal(manager.getSnapshot(), completed);
-  manager.dismiss(id);
-  assert.deepEqual(manager.getSnapshot(), []);
+  try {
+    await uploadImportFile("https://test.supabase.co/storage/v1/object/upload/sign/hph-imports/kairon/test.hph-import?token=token",
+      new Blob(["test"]), {}, new AbortController().signal, () => {});
+    assert.equal(created, true);
+  } finally { globalThis.fetch = original; }
 });

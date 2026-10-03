@@ -1,53 +1,26 @@
-import { kaironApi } from "@/api/kaironApi";
-import { manualDailyRecordsApi } from "@/api/manualDailyRecordsApi";
+import { fileImportsApi } from "@/api/fileImportsApi";
+import { apiSlice } from "@/api/apiSlice";
 import { store } from "@/app/store";
-
 import { UploadManager } from "./uploadManager";
+import { uploadImportFile } from "./importFile";
 
-interface Request<T> {
-  unwrap(): Promise<T>;
-  abort(): void;
-  reset?: () => void;
-  unsubscribe?: () => void;
-}
-
+interface Request<T> { unwrap(): Promise<T>; abort(): void; reset?: () => void; unsubscribe?: () => void }
 async function request<T>(pending: Request<T>, signal: AbortSignal): Promise<T> {
   const abort = () => pending.abort();
   signal.addEventListener("abort", abort, { once: true });
   if (signal.aborted) abort();
-  try {
-    return await pending.unwrap();
-  } finally {
-    signal.removeEventListener("abort", abort);
-    pending.unsubscribe?.();
-    pending.reset?.();
-  }
+  try { return await pending.unwrap(); }
+  finally { signal.removeEventListener("abort", abort); pending.unsubscribe?.(); pending.reset?.(); }
 }
-
 export const backgroundUploads = new UploadManager({
-  listManualRecords: (query, signal) => request(store.dispatch(
-    manualDailyRecordsApi.endpoints.listManualDailyRecords.initiate(query, { subscribe: false, forceRefetch: true }),
-  ), signal),
-  startManual: (payload, signal) => request(store.dispatch(
-    manualDailyRecordsApi.endpoints.startManualImport.initiate(payload, { track: false }),
-  ), signal),
-  uploadManual: (payload, signal) => request(store.dispatch(
-    manualDailyRecordsApi.endpoints.uploadManualImportChunk.initiate(payload, { track: false }),
-  ), signal),
-  completeManual: (id, signal) => request(store.dispatch(
-    manualDailyRecordsApi.endpoints.completeManualImport.initiate(id, { track: false }),
-  ), signal),
-  startKairon: (payload, signal) => request(store.dispatch(
-    kaironApi.endpoints.startKaironImport.initiate(payload, { track: false }),
-  ), signal),
-  uploadKairon: (payload, signal) => request(store.dispatch(
-    kaironApi.endpoints.uploadKaironImportChunk.initiate(payload, { track: false }),
-  ), signal),
-  completeKairon: (id, signal) => request(store.dispatch(
-    kaironApi.endpoints.completeKaironImport.initiate(id, { track: false }),
-  ), signal),
+  prepare: (payload, signal) => request(store.dispatch(fileImportsApi.endpoints.prepareFileImport.initiate(payload, { track: false })), signal),
+  upload: uploadImportFile,
+  complete: (payload, signal) => request(store.dispatch(fileImportsApi.endpoints.completeFileUpload.initiate(payload, { track: false })), signal),
+  get: (id, signal) => request(store.dispatch(fileImportsApi.endpoints.getFileImport.initiate(id, { subscribe: false, forceRefetch: true })), signal),
+  list: (signal) => request(store.dispatch(fileImportsApi.endpoints.listFileImports.initiate(undefined, { subscribe: false, forceRefetch: true })), signal),
+  retry: (id, signal) => request(store.dispatch(fileImportsApi.endpoints.retryFileImport.initiate(id, { track: false })), signal),
+  abandon: (id, signal) => request(store.dispatch(fileImportsApi.endpoints.abandonFileImport.initiate(id, { track: false })), signal),
+  invalidate: () => { store.dispatch(apiSlice.util.invalidateTags(["KaironUploadBatches", "KaironChartRecords", "ManualDailyRecords", "CodingDashboard"])); },
 });
-
 const syncSession = () => backgroundUploads.setSession(store.getState().auth.user?.id ?? null);
-syncSession();
-store.subscribe(syncSession);
+syncSession(); store.subscribe(syncSession);

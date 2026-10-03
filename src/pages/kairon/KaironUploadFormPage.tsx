@@ -159,7 +159,7 @@ export function KaironUploadFormPage({ embedded = false, onCancel, onStarted }: 
         )}
 
         <p className="text-xs text-content-muted">
-          Your upload continues while you browse. Track it in the bottom-right upload widget and keep this tab open.
+          Keep this tab open until processing finishes. Track progress in the upload widget; submitted imports can resume from saved progress after an interruption.
         </p>
 
         <div className="mt-2 flex gap-2">

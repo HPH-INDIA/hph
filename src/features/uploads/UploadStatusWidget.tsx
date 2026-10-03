@@ -5,35 +5,39 @@ import { backgroundUploads } from "./uploadService";
 import { useBackgroundUploads } from "./useBackgroundUploads";
 
 function completionSummary(job: UploadJob) {
-  if (job.progress && "insertedCount" in job.progress) {
+  if (job.progress && job.kind === "kairon") {
     const progress = job.progress;
     return `${progress.insertedCount.toLocaleString()} new · ${progress.updatedCount.toLocaleString()} updated · ${progress.unchangedCount.toLocaleString()} unchanged · ${progress.rejectedCount.toLocaleString()} rejected · ${progress.unmatchedCount.toLocaleString()} unmatched`;
   }
 
   const progress = job.progress;
-  const unchanged = (progress?.unchangedCount ?? 0) + (job.comparison?.unchangedCount ?? 0);
+  const unchanged = (progress?.unchangedCount ?? 0);
   return `${(progress?.createdCount ?? 0).toLocaleString()} created · ${(progress?.updatedCount ?? 0).toLocaleString()} updated · ${unchanged.toLocaleString()} unchanged`;
 }
 
 function UploadStatusItem({ job }: { job: UploadJob }) {
   const typeLabel = job.kind === "kairon" ? "Kairon" : "Manual";
   const isComplete = job.status === "completed";
-  const isFailed = job.status === "failed";
+  const isFailed = job.status === "failed" || job.status === "abandoned";
   const isPreparing = job.status === "preparing";
   const isActive = !isComplete && !isFailed;
   const percent = isComplete
     ? 100
+    : job.status === "uploading" ? job.transferPercent ?? 0
     : job.totalRows > 0
       ? Math.min(100, Math.max(0, Math.round((job.processedCount / job.totalRows) * 100)))
       : 0;
   const statusLabel = {
-    preparing: job.kind === "manual" ? "Comparing records…" : "Preparing upload…",
+    preparing: "Preparing encrypted file…",
+    queued: "Queued for processing…",
+    processing: "Processing records…",
+    abandoned: "Upload expired or abandoned",
     uploading: "Uploading…",
-    completing: "Finishing upload…",
+    completing: "Submitting for processing…",
     completed: "Complete",
     failed: "Upload stopped",
   }[job.status];
-  const progressText = job.totalRows > 0
+  const progressText = job.status === "uploading" ? "Transferring file to secure storage" : job.totalRows > 0
     ? `${job.processedCount.toLocaleString()} of ${job.totalRows.toLocaleString()} rows`
     : isComplete ? "No changes needed" : "Preparing rows";
 
@@ -82,8 +86,12 @@ function UploadStatusItem({ job }: { job: UploadJob }) {
       </div>
 
       {!isPreparing && <p className="text-xs tabular-nums text-content-secondary">{progressText}</p>}
+      {job.status === "uploading" && (
+        <button type="button" onClick={() => backgroundUploads.cancel(job.id)}
+          className="self-start text-xs font-semibold text-brand-600">Cancel upload</button>
+      )}
       {isComplete && <p className="text-xs leading-relaxed text-content-secondary">{completionSummary(job)}</p>}
-      {isFailed && (
+      {isFailed && job.status !== "abandoned" && (
         <div className="flex flex-col items-start gap-2">
           <p className="break-words text-xs leading-relaxed text-danger">{job.error || "The upload could not finish. Retry to continue."}</p>
           <button
@@ -122,7 +130,7 @@ export function UploadStatusWidget() {
         {jobs.map((job) => <UploadStatusItem key={job.id} job={job} />)}
       </ul>
       <p className="shrink-0 border-t border-border px-4 py-2.5 text-xs leading-relaxed text-content-secondary">
-        Uploads continue as you browse. Keep this tab open.
+        Keep this tab open until processing finishes. If interrupted after submission, reopen the app and retry to continue from saved progress.
       </p>
     </section>
   );

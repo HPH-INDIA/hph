@@ -1,244 +1,198 @@
 import { getErrorMessage } from "@/api/apiError";
-import type {
-  KaironChartRowInput,
-  KaironImportChunkPayload,
-  KaironImportProgress,
-  KaironImportStartPayload,
-  ManualDailyRecord,
-  ManualDailyRecordQuery,
-  ManualImportChunkPayload,
-  ManualImportProgress,
-  ManualImportRow,
-  ManualImportStartPayload,
-} from "@/api/types";
-import { IMPORT_CHUNK_SIZE, sha256 } from "@/lib/imports";
+import type { FileImportProgress, PreparedFileImport, PrepareFileImport } from "@/api/fileImportsApi";
+import type { KaironChartRowInput, ManualImportRow } from "@/api/types";
+import { buildImportFile } from "./importFile";
 
 export type UploadInput =
   | { kind: "kairon"; fileName: string; fileChecksum: string; rows: KaironChartRowInput[] }
   | { kind: "manual"; fileName: string; fileChecksum: string; rows: ManualImportRow[]; minDate: string | null; maxDate: string | null };
-
 export interface UploadJob {
   id: string;
   kind: UploadInput["kind"];
   fileName: string;
-  status: "preparing" | "uploading" | "completing" | "completed" | "failed";
+  status: "preparing" | "uploading" | "queued" | "processing" | "completing" | "completed" | "failed" | "abandoned";
   processedCount: number;
   totalRows: number;
-  progress?: KaironImportProgress | ManualImportProgress;
-  comparison?: { newCount: number; modifiedCount: number; unchangedCount: number };
+  transferPercent?: number;
+  progress?: FileImportProgress;
   error?: string;
 }
-
 export interface UploadTransport {
-  listManualRecords(query: ManualDailyRecordQuery, signal: AbortSignal): Promise<ManualDailyRecord[]>;
-  startKairon(payload: KaironImportStartPayload, signal: AbortSignal): Promise<KaironImportProgress>;
-  uploadKairon(payload: KaironImportChunkPayload, signal: AbortSignal): Promise<KaironImportProgress>;
-  completeKairon(importId: number, signal: AbortSignal): Promise<KaironImportProgress>;
-  startManual(payload: ManualImportStartPayload, signal: AbortSignal): Promise<ManualImportProgress>;
-  uploadManual(payload: ManualImportChunkPayload, signal: AbortSignal): Promise<ManualImportProgress>;
-  completeManual(importId: number, signal: AbortSignal): Promise<ManualImportProgress>;
+  prepare(payload: PrepareFileImport, signal: AbortSignal): Promise<PreparedFileImport>;
+  upload(url: string, blob: Blob, transfer: { url?: string }, signal: AbortSignal, onProgress: (percent: number) => void): Promise<void>;
+  complete(payload: { id: string; fileSize: number; fileChecksum: string }, signal: AbortSignal): Promise<FileImportProgress>;
+  get(id: string, signal: AbortSignal): Promise<FileImportProgress>;
+  list(signal: AbortSignal): Promise<FileImportProgress[]>;
+  retry(id: string, signal: AbortSignal): Promise<FileImportProgress>;
+  abandon(id: string, signal: AbortSignal): Promise<FileImportProgress>;
+  invalidate(): void;
 }
-
-type Progress = KaironImportProgress | ManualImportProgress;
-type PendingChunk = { offset: number; chunkNumber: number; checksum: string };
-interface UploadWork {
-  input: UploadInput;
-  candidates?: ManualImportRow[];
-  progress?: Progress;
-  pendingChunk?: PendingChunk;
+interface Work {
+  input?: UploadInput;
+  prepared?: PreparedFileImport;
+  file?: { blob: Blob; checksum: string };
+  transfer: { url?: string };
+  uploaded?: boolean;
   running: boolean;
   controller?: AbortController;
 }
-
-function valuesMatch(row: ManualImportRow, existing: ManualDailyRecord) {
-  return existing.productionCount === row.productionCount &&
-    Number(existing.techIssuesDowntimeHours) === row.techIssuesDowntimeHours &&
-    Number(existing.noInventoryIdleTimeHours) === row.noInventoryIdleTimeHours &&
-    Number(existing.leaveHours) === row.leaveHours &&
-    Number(existing.meetingEngagementHours) === row.meetingEngagementHours;
+function delay(signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const abort = () => { clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); };
+    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, 3000);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+  });
 }
 
-/** Retains raw rows in memory; observable job snapshots contain only status metadata. */
 export class UploadManager {
   private jobs: UploadJob[] = [];
-  private readonly work = new Map<string, UploadWork>();
-  private readonly listeners = new Set<() => void>();
-  private sequence = 0;
+  private work = new Map<string, Work>();
+  private listeners = new Set<() => void>();
   private userId: number | null | undefined;
-
-  constructor(
-    private readonly transport: UploadTransport,
-    private readonly checksum: (value: string) => Promise<string> = sha256,
-  ) {}
-
-  getSnapshot = (): UploadJob[] => this.jobs;
-
-  subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
-  };
-
-  start = (input: UploadInput): string => {
-    for (const [id, work] of this.work) {
-      if (work.input.kind === input.kind && work.input.fileChecksum === input.fileChecksum) return id;
+  private sessionController?: AbortController;
+  constructor(private transport: UploadTransport,
+    private buildFile = buildImportFile,
+    private wait = delay) {}
+  getSnapshot = () => this.jobs;
+  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  private emit() { for (const listener of this.listeners) listener(); }
+  private update(id: string, changes: Partial<UploadJob>) {
+    this.jobs = this.jobs.map((job) => job.id === id ? { ...job, ...changes } : job); this.emit();
+  }
+  private accept(progress: FileImportProgress) {
+    this.update(progress.id, { progress, status: progress.status, processedCount: progress.processedCount,
+      totalRows: progress.totalRows, error: progress.error ?? undefined });
+    if (progress.status === "completed") {
+      this.work.delete(progress.id);
+      this.transport.invalidate();
+      return true;
     }
-    const id = `upload-${++this.sequence}`;
-    // Snapshot the rows so changing/resetting the source form cannot alter a retry's payload.
-    const snapshot: UploadInput = input.kind === "kairon"
-      ? { ...input, rows: input.rows.map((row) => ({ ...row })) }
-      : { ...input, rows: input.rows.map((row) => ({ ...row })) };
-    const work: UploadWork = { input: snapshot, running: false };
+    return progress.status === "failed" || progress.status === "abandoned";
+  }
+  start = (input: UploadInput): string => {
+    const duplicate = this.jobs.find((job) => this.work.get(job.id)?.input?.fileChecksum === input.fileChecksum && job.kind === input.kind);
+    if (duplicate) return duplicate.id;
+    const id = crypto.randomUUID();
+    const work: Work = { input: { ...input, rows: input.rows.map((row) => ({ ...row })) } as UploadInput, transfer: {}, running: false };
     this.work.set(id, work);
-    this.jobs = [...this.jobs, {
-      id, kind: input.kind, fileName: input.fileName, status: "preparing",
-      processedCount: 0, totalRows: input.rows.length,
-    }];
-    this.emit();
-    this.launch(id, work);
-    return id;
+    this.jobs = [...this.jobs, { id, kind: input.kind, fileName: input.fileName, status: "preparing", processedCount: 0, totalRows: input.rows.length }];
+    this.emit(); this.launch(id, work); return id;
   };
-
   retry = (id: string) => {
     const work = this.work.get(id);
-    if (!work || work.running || this.jobs.find((job) => job.id === id)?.status !== "failed") return;
-    this.launch(id, work);
+    if (work && !work.running && this.jobs.find((job) => job.id === id)?.status === "failed") this.launch(id, work);
   };
-
   dismiss = (id: string) => {
     const job = this.jobs.find((entry) => entry.id === id);
-    if (!job || (job.status !== "completed" && job.status !== "failed")) return;
-    this.work.delete(id);
-    this.jobs = this.jobs.filter((entry) => entry.id !== id);
-    this.emit();
+    if (!job || !["completed", "failed", "abandoned"].includes(job.status)) return;
+    const work = this.work.get(id);
+    if ((work?.prepared || job.progress) && job.status === "failed") {
+      // Release an unfinished/failed slot explicitly; processing jobs cannot be abandoned.
+      const controller = new AbortController();
+      void this.transport.abandon(id, controller.signal).then(() => this.remove(id)).catch((error) => this.update(id, { error: getErrorMessage(error) }));
+    } else this.remove(id);
   };
-
+  cancel = (id: string) => {
+    const job = this.jobs.find((entry) => entry.id === id);
+    if (!job || job.status !== "uploading") return;
+    const controller = new AbortController();
+    void this.transport.abandon(id, controller.signal).then(() => this.remove(id)).catch((error) => this.update(id, { error: getErrorMessage(error) }));
+  };
+  private remove(id: string) { this.work.get(id)?.controller?.abort(); this.work.delete(id); this.jobs = this.jobs.filter((job) => job.id !== id); this.emit(); }
   clear = () => {
-    const work = [...this.work.values()];
-    this.work.clear();
-    this.jobs = [];
-    // Invalidate first: abort callbacks must not resurrect cleared jobs.
-    for (const entry of work) entry.controller?.abort();
-    this.emit();
+    this.sessionController?.abort();
+    for (const work of this.work.values()) work.controller?.abort();
+    this.work.clear(); this.jobs = []; this.emit();
   };
-
-  /** Same-user whoami refreshes preserve work; logout/rejection/user switches discard it. */
   setSession = (userId: number | null) => {
-    if (this.userId === userId) return;
-    this.userId = userId;
-    this.clear();
+    if (userId === this.userId) return;
+    this.userId = userId; this.clear();
+    if (userId === null) return;
+    const controller = new AbortController(); this.sessionController = controller;
+    void this.transport.list(controller.signal).then((jobs) => {
+      if (controller.signal.aborted || this.userId !== userId) return;
+      for (const progress of jobs) {
+        if (this.work.has(progress.id) || progress.status === "abandoned") continue;
+        this.jobs = [...this.jobs, { id: progress.id, kind: progress.kind, fileName: progress.sourceFilename,
+          status: progress.status, processedCount: progress.processedCount, totalRows: progress.totalRows, progress, error: progress.error ?? undefined }];
+        if (progress.status !== "completed") {
+          const work: Work = { transfer: {}, running: false }; this.work.set(progress.id, work);
+          if (progress.status !== "failed") this.launch(progress.id, work);
+        }
+      }
+      this.emit();
+    }).catch(() => { /* Existing imports remain durable and can be recovered on next login. */ });
   };
-
-  private emit() {
-    for (const listener of this.listeners) listener();
-  }
-
-  private update(id: string, update: Partial<UploadJob>) {
-    this.jobs = this.jobs.map((job) => job.id === id ? { ...job, ...update } : job);
-    this.emit();
-  }
-
-  private launch(id: string, work: UploadWork) {
-    // Set before awaiting anything to make repeated Retry clicks harmless.
-    work.running = true;
-    work.controller = new AbortController();
-    this.update(id, { status: work.progress ? "uploading" : "preparing", error: undefined });
+  private launch(id: string, work: Work) {
+    work.running = true; work.controller = new AbortController();
+    this.update(id, { error: undefined });
     void this.run(id, work, work.controller.signal);
   }
-
-  private async run(id: string, work: UploadWork, signal: AbortSignal) {
+  private async run(id: string, work: Work, signal: AbortSignal) {
     const alive = () => this.work.get(id) === work && !signal.aborted;
-    const accept = (progress: Progress) => {
-      work.progress = progress;
-      this.update(id, { progress, processedCount: progress.processedCount, totalRows: progress.totalRows });
-      if (progress.status === "failed") {
-        // The server may make a failed import resumable via the idempotent start endpoint.
-        work.progress = undefined;
-        work.pendingChunk = undefined;
-        throw new Error("The server marked this import as failed. Retry to resume it, or dismiss it and upload a corrected file.");
-      }
-      if (progress.status === "completed") {
-        this.finish(id);
-        return true;
-      }
-      return false;
-    };
-
     try {
-      if (!alive()) return;
-      const input = work.input;
-      if (input.kind === "manual" && !work.candidates) {
-        const existing = await this.transport.listManualRecords({
-          fromDate: input.minDate,
-          toDate: input.maxDate,
-          userIds: [...new Set(input.rows.map((row) => row.userId))],
-        }, signal);
+      let server = this.jobs.find((job) => job.id === id)?.progress;
+      if (server?.status === "failed") server = await this.transport.retry(id, signal);
+      if (!work.prepared && work.input && !server) {
+        this.update(id, { status: "preparing" });
+        const input = work.input;
+        work.prepared = await this.transport.prepare({ kind: input.kind, requestId: id,
+          sourceFilename: input.fileName, sourceChecksum: input.fileChecksum, totalRows: input.rows.length }, signal);
         if (!alive()) return;
-        const byUserDate = new Map(existing.map((record) => [`${record.userId}|${record.date}`, record]));
-        const comparison = { newCount: 0, modifiedCount: 0, unchangedCount: 0 };
-        work.candidates = input.rows.filter((row) => {
-          const record = byUserDate.get(`${row.userId}|${row.date}`);
-          if (!record) comparison.newCount += 1;
-          else if (valuesMatch(row, record)) {
-            comparison.unchangedCount += 1;
-            return false;
-          } else comparison.modifiedCount += 1;
-          return true;
-        });
-        this.update(id, { comparison, totalRows: work.candidates.length });
+        server = work.prepared;
       }
-      const rows = input.kind === "manual" ? work.candidates! : input.rows;
-      if (rows.length === 0) {
-        this.finish(id);
-        return;
-      }
-      if (!work.progress) {
-        const payload = { sourceFilename: input.fileName, fileChecksum: input.fileChecksum, totalRows: rows.length };
-        const progress = input.kind === "manual"
-          ? await this.transport.startManual(payload, signal)
-          : await this.transport.startKairon(payload, signal);
-        if (!alive()) return;
-        if (accept(progress)) return;
-      }
-      this.update(id, { status: "uploading" });
-      while (work.progress!.processedCount < rows.length) {
-        if (!alive()) return;
-        const offset = work.progress!.processedCount;
-        if (!work.pendingChunk) {
-          const chunkRows = rows.slice(offset, offset + IMPORT_CHUNK_SIZE);
-          const checksum = await this.checksum(JSON.stringify(chunkRows));
+      if (work.prepared?.status === "uploading" && work.input && !work.uploaded && (!server || server.status === "uploading")) {
+        if (work.file) {
+          // Refresh short-lived authorization while retaining the same per-import key and ciphertext.
+          const input = work.input;
+          work.prepared = await this.transport.prepare({ kind: input.kind, requestId: id,
+            sourceFilename: input.fileName, sourceChecksum: input.fileChecksum, totalRows: input.rows.length }, signal);
           if (!alive()) return;
-          work.pendingChunk = { offset, chunkNumber: Math.floor(offset / IMPORT_CHUNK_SIZE), checksum };
+          if (work.prepared.status !== "uploading") server = work.prepared;
         }
-        const chunk = work.pendingChunk;
-        const payload = { importId: work.progress!.id, chunkNumber: chunk.chunkNumber, checksum: chunk.checksum };
-        const progress = input.kind === "manual"
-          ? await this.transport.uploadManual({ ...payload, rows: work.candidates!.slice(chunk.offset, chunk.offset + IMPORT_CHUNK_SIZE) }, signal)
-          : await this.transport.uploadKairon({ ...payload, rows: input.rows.slice(chunk.offset, chunk.offset + IMPORT_CHUNK_SIZE) }, signal);
-        if (!alive()) return;
-        if (accept(progress)) return;
-        if (progress.processedCount < Math.min(chunk.offset + IMPORT_CHUNK_SIZE, rows.length)) {
-          throw new Error("The server did not acknowledge this upload chunk. Please retry.");
+        if (!work.file) {
+          const prepared = work.prepared;
+          if (!prepared.encryptionKey || !prepared.signedUrl) throw new Error("Upload authorization is missing.");
+          work.file = await this.buildFile(id, prepared.encryptionKey, work.input.rows, prepared.maxFileBytes, signal);
+          if (!alive()) return;
         }
-        work.pendingChunk = undefined;
+        if (server && server.status !== "uploading") {
+          work.input = undefined; work.file = undefined; work.prepared = undefined;
+        } else {
+          this.update(id, { status: "uploading" });
+          try {
+            await this.transport.upload(work.prepared.signedUrl!, work.file.blob, work.transfer, signal,
+              (transferPercent) => { if (alive()) this.update(id, { transferPercent }); });
+            work.uploaded = true;
+          } catch (error) {
+            if (!alive()) return;
+            // A lost final response may still mean Supabase received the whole object.
+            const current = await this.transport.get(id, signal);
+            if (current.status === "uploading") throw error;
+            server = current;
+          }
+          if (!alive()) return;
+        }
       }
-      this.update(id, { status: "completing" });
-      if (!alive()) return;
-      const completed = input.kind === "manual"
-        ? await this.transport.completeManual(work.progress!.id, signal)
-        : await this.transport.completeKairon(work.progress!.id, signal);
-      if (!alive()) return;
-      if (!accept(completed)) throw new Error("The server has not completed this import yet. Please retry.");
+      if (work.uploaded && work.file && (!server || server.status === "uploading")) {
+        this.update(id, { status: "completing" });
+        server = await this.transport.complete({ id, fileSize: work.file.blob.size, fileChecksum: work.file.checksum }, signal);
+        if (!alive()) return;
+      }
+      if (server && server.status !== "uploading") {
+        // No identifiers or encrypted payloads are retained after server submission.
+        work.input = undefined; work.file = undefined; work.prepared = undefined;
+      }
+      while (alive()) {
+        const current = server ?? await this.transport.get(id, signal);
+        if (!alive()) return;
+        if (this.accept(current)) return;
+        await this.wait(signal);
+        server = undefined;
+      }
     } catch (error) {
       if (alive()) this.update(id, { status: "failed", error: getErrorMessage(error) });
-    } finally {
-      work.running = false;
-      work.controller = undefined;
-    }
-  }
-
-  private finish(id: string) {
-    // No completed job retains patient identifiers or the original workbook rows.
-    this.work.delete(id);
-    this.update(id, { status: "completed", error: undefined });
+    } finally { work.running = false; work.controller = undefined; }
   }
 }

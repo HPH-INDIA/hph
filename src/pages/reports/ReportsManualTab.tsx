@@ -330,7 +330,7 @@ function ManualBulkUploadForm({ onStarted, onCancel }: { onStarted: () => void; 
       )}
 
       <p className="text-xs text-content-muted">
-        Comparison and upload continue while you browse. Track them in the bottom-right upload widget and keep this tab open.
+        Keep this tab open until processing finishes. Track progress in the upload widget; submitted imports can resume from saved progress after an interruption.
       </p>
 
       <div className="flex gap-2">
