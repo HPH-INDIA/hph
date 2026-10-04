@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import type { DailyEfficiency } from "@/api/types";
 
@@ -7,7 +7,16 @@ import { dailyCsv, dayLabel, filterDays, monthLabel, numberLabel, type Performan
 
 const controlClass = "min-h-10 rounded-md border border-border bg-surface text-sm text-content-secondary outline-none transition hover:border-border-strong focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2";
 
-export function DailyPerformance({ rows, month }: { rows: DailyEfficiency[]; month: string }) {
+export function DailyPerformance({ rows, month, periodLabel = monthLabel(month), title = "Daily performance", description = "Your daily charts, targets, and efficiency in one place.", exportName = `performance-${month}`, showYear = false }: {
+  rows: DailyEfficiency[];
+  month: string;
+  periodLabel?: string;
+  title?: string;
+  description?: string;
+  exportName?: string;
+  showYear?: boolean;
+}) {
+  const titleId = useId();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<PerformanceFilter>("all");
   const [oldestFirst, setOldestFirst] = useState(false);
@@ -19,7 +28,7 @@ export function DailyPerformance({ rows, month }: { rows: DailyEfficiency[]; mon
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `performance-${month}${filtered ? "-filtered" : ""}.csv`;
+    anchor.download = `${exportName}${filtered ? "-filtered" : ""}.csv`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -29,11 +38,11 @@ export function DailyPerformance({ rows, month }: { rows: DailyEfficiency[]; mon
   function reset() { setSearch(""); setFilter("all"); }
 
   return (
-    <section aria-labelledby="daily-performance-title" className="min-w-0 overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
+    <section aria-labelledby={titleId} className="min-w-0 overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5">
         <div>
-          <h2 id="daily-performance-title" className="text-base font-semibold">Daily performance</h2>
-          <p className="mt-1 text-xs text-content-secondary">Your daily charts, targets, and efficiency in one place.</p>
+          <h2 id={titleId} className="text-base font-semibold">{title}</h2>
+          <p className="mt-1 text-xs text-content-secondary">{description}</p>
         </div>
         <button type="button" onClick={download} disabled={!visible.length} className={`${controlClass} flex items-center gap-2 px-3 font-medium disabled:cursor-not-allowed disabled:opacity-40`}>
           <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 2v10m-4-4 4 4 4-4M3 13v4h14v-4" /></svg>
@@ -64,13 +73,13 @@ export function DailyPerformance({ rows, month }: { rows: DailyEfficiency[]; mon
       </div>
 
       {!visible.length ? <div className="border-t border-border px-5 py-12 text-center">
-        <p className="text-sm font-semibold">{rows.length ? "No matching records" : "No records for this month"}</p>
-        <p className="mt-2 text-sm text-content-secondary">{rows.length ? "Try a different date, stage, or efficiency filter." : `Your daily performance will appear here when records are available for ${monthLabel(month)}.`}</p>
+        <p className="text-sm font-semibold">{rows.length ? "No matching records" : "No records for this period"}</p>
+        <p className="mt-2 text-sm text-content-secondary">{rows.length ? "Try a different date, stage, or efficiency filter." : `Your daily performance will appear here when records are available for ${periodLabel}.`}</p>
         {rows.length > 0 && <button type="button" onClick={reset} className={`${controlClass} mt-4 px-4 font-medium`}>Clear filters</button>}
       </div> : <>
         <div className="hidden max-h-[580px] overflow-auto border-t border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 sm:block" tabIndex={0} role="region" aria-label="Daily performance table; scroll to see more records and columns">
           <table className="w-full min-w-[1090px] border-separate border-spacing-0 text-sm tabular-nums">
-            <caption className="sr-only">Daily performance for {monthLabel(month)}. Adjusted target CPD is calculated from saved manual records.</caption>
+            <caption className="sr-only">Daily performance for {periodLabel}. Adjusted target CPD is calculated from saved manual records.</caption>
             <thead className="sticky top-0 z-20 bg-surface-muted text-xs text-content-secondary">
               <tr>
                 <th scope="col" aria-sort={oldestFirst ? "ascending" : "descending"} className="sticky left-0 z-30 border-b border-border bg-surface-muted px-5 py-3 text-left font-medium">Date</th>
@@ -86,7 +95,7 @@ export function DailyPerformance({ rows, month }: { rows: DailyEfficiency[]; mon
               </tr>
             </thead>
             <tbody>{visible.map((row) => <tr key={row.date} className="group hover:bg-surface-muted">
-              <th scope="row" className="sticky left-0 z-10 whitespace-nowrap border-b border-border bg-surface px-5 py-3 text-left font-medium group-hover:bg-surface-muted"><time dateTime={row.date} title={row.date}>{dayLabel(row.date)}</time></th>
+              <th scope="row" className="sticky left-0 z-10 whitespace-nowrap border-b border-border bg-surface px-5 py-3 text-left font-medium group-hover:bg-surface-muted"><time dateTime={row.date} title={row.date}>{dayLabel(row.date, showYear)}</time></th>
               <td className="border-b border-border px-3 py-3"><Stage value={row.stage} /></td>
               <td className="border-b border-border px-3 py-3 text-right font-semibold">{numberLabel(row.manualCharts)}</td>
               <td className="border-b border-border px-3 py-3 text-right font-semibold">{numberLabel(row.kaironCharts)}</td>
@@ -100,12 +109,12 @@ export function DailyPerformance({ rows, month }: { rows: DailyEfficiency[]; mon
           </table>
         </div>
         <div className="divide-y divide-border border-t border-border sm:hidden">
-          {visible.map((row) => <MobileDay key={row.date} row={row} />)}
+          {visible.map((row) => <MobileDay key={row.date} row={row} showYear={showYear} />)}
         </div>
       </>}
 
       <div className="flex flex-wrap items-center justify-between gap-2 bg-surface-muted px-5 py-3 text-xs text-content-secondary">
-        <span role="status" aria-live="polite">{visible.length} of {rows.length} records · {monthLabel(month)}</span>
+        <span role="status" aria-live="polite">{visible.length} of {rows.length} records · {periodLabel}</span>
         {filtered && <button type="button" onClick={reset} className="rounded font-medium text-brand-600 underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">Clear filters</button>}
         {!filtered && <span>Adjusted CPD uses manual records · Huddle excluded</span>}
       </div>
@@ -117,10 +126,10 @@ function Stage({ value }: { value: string | null }) {
   return <span className="inline-block whitespace-nowrap rounded-full bg-surface-muted px-2.5 py-1 text-xs text-content-secondary">{value ?? "Unassigned"}</span>;
 }
 
-function MobileDay({ row }: { row: DailyEfficiency }) {
+function MobileDay({ row, showYear }: { row: DailyEfficiency; showYear: boolean }) {
   return (
     <article className="px-5 py-4">
-      <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold"><time dateTime={row.date}>{dayLabel(row.date)}</time></h3><Stage value={row.stage} /></div>
+      <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold"><time dateTime={row.date}>{dayLabel(row.date, showYear)}</time></h3><Stage value={row.stage} /></div>
       <dl className="mt-4 grid grid-cols-2 gap-3 text-xs text-content-secondary">
         <div><dt>Manual charts completed</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-content-primary">{numberLabel(row.manualCharts)}</dd></div>
         <div><dt>Kairon charts completed</dt><dd className="mt-1 text-lg font-semibold tabular-nums text-content-primary">{numberLabel(row.kaironCharts)}</dd></div>

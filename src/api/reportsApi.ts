@@ -23,6 +23,8 @@ import type {
   ManualTeamDay,
   ManualTeamRange,
   MonthlyGoalSummary,
+  LeadDashboardQuery,
+  LeadDashboardSummary,
   PaginatedResult,
   PaginationQuery,
   SelfKaironChartQuery,
@@ -115,6 +117,10 @@ export const reportsApi = apiSlice.injectEndpoints({
       query: (args) => ({ url: `/dashboards/coding${buildQueryString({ ...args })}` }),
       providesTags: [{ type: "CodingDashboard" }],
     }),
+    getLeadDashboard: builder.query<LeadDashboardSummary, LeadDashboardQuery>({
+      query: (args) => ({ url: `/dashboards/lead${buildQueryString(args)}` }),
+      providesTags: [{ type: "CodingDashboard" }, { type: "Users", id: "LIST" }, { type: "Team" }],
+    }),
     getMyEfficiency: builder.query<EfficiencySummary, CodingDashboardQuery | void>({
       query: (args) => ({ url: `/dashboards/my-efficiency${buildQueryString({ ...args })}` }),
       providesTags: [{ type: "CodingDashboard" }],
@@ -143,5 +149,6 @@ export const {
   useBulkRejectManualRecordsMutation,
   useGetCodingDashboardQuery,
   useGetMyEfficiencyQuery,
+  useGetLeadDashboardQuery,
   useGetMonthlyGoalQuery,
 } = reportsApi;

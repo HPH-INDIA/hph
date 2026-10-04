@@ -823,3 +823,25 @@ export interface CodingDashboardCard {
   manual: CodingDashboardManualSummary;
   efficiency: EfficiencySummary;
 }
+
+
+export type LeadDashboardQuery = Pick<CodingDashboardQuery, "from" | "to" | "date" | "month" | "year"> & { coderId?: number };
+
+export interface PeriodGoalSummary extends MonthlyGoalSummary {
+  from: string;
+  to: string;
+}
+
+export interface LeadPerformanceSection {
+  goal: PeriodGoalSummary;
+  efficiency: EfficiencySummary;
+}
+
+export interface LeadDashboardSummary {
+  from: string;
+  to: string;
+  selectedCoderId: number | null;
+  coderOptions: { userId: number; name: string; isActive: boolean }[];
+  qa: LeadPerformanceSection;
+  coders: LeadPerformanceSection;
+}

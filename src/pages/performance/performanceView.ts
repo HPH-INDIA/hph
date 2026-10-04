@@ -19,9 +19,9 @@ export function monthLabel(month: string) {
   });
 }
 
-export function dayLabel(day: string) {
+export function dayLabel(day: string, showYear = false) {
   return new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", {
-    day: "2-digit", month: "short", timeZone: "UTC",
+    day: "2-digit", month: "short", year: showYear ? "numeric" : undefined, timeZone: "UTC",
   });
 }
 

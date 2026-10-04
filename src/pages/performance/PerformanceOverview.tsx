@@ -1,10 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 
 import type { EfficiencySummary, MonthlyGoalSummary } from "@/api/types";
 import { ErrorState, LoadingState } from "@/components/ui/StateViews";
 
 import { DailyPerformance } from "./DailyPerformance";
-import { EfficiencyValue } from "./EfficiencyValue";
+import { PerformanceSummary } from "./PerformanceSummary";
 import { chartLabel, monthLabel, numberLabel, shiftMonth } from "./performanceView";
 
 const focusClass = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2";
@@ -58,20 +58,7 @@ export function PerformanceOverview(props: PerformanceOverviewProps) {
       {props.summaryLoading ? <LoadingState label="Loading your performance…" />
         : props.summaryError ? <ErrorState message={props.summaryError} onRetry={props.onRetrySummary} />
         : summary ? <>
-          <section aria-label="Personal performance summary" className="grid gap-3 md:grid-cols-3">
-            <ComparisonCard title="Charts completed" note={goal?.scope === "team" ? "Your personal totals" : "Recorded this month"}>
-              <Metric label="Manual" value={numberLabel(summary.manualCharts)} />
-              <Metric label="Kairon" value={numberLabel(summary.kaironCharts)} />
-            </ComparisonCard>
-            <ComparisonCard title="Efficiency" note="100% meets target · capped at 120%">
-              <Metric label="Manual" value={<EfficiencyValue value={summary.manualEfficiencyPercent} large />} />
-              <Metric label="Kairon" value={<EfficiencyValue value={summary.kaironEfficiencyPercent} large />} />
-            </ComparisonCard>
-            <ComparisonCard title="Charts per day" note="Normalized to an 8-hour day" trailing={<span className="rounded-full bg-surface-muted px-2.5 py-1 text-xs font-medium text-content-secondary">Target {numberLabel(summary.targetCpd, 1)}</span>}>
-              <Metric label="Manual" value={numberLabel(summary.manualCpd, 1)} />
-              <Metric label="Kairon" value={numberLabel(summary.kaironCpd, 1)} />
-            </ComparisonCard>
-          </section>
+          <PerformanceSummary summary={summary} note={goal?.scope === "team" ? "Your personal totals" : "Recorded this month"} />
           <DailyPerformance key={month} rows={summary.daily} month={month} />
         </> : null}
 
@@ -159,20 +146,6 @@ function TeamGoals({ goal }: { goal: MonthlyGoalSummary }) {
       </div> : <p className="px-5 pb-5 text-sm text-content-secondary sm:px-7">Team member details are unavailable.</p>}
     </details>
   );
-}
-
-function ComparisonCard({ title, note, trailing, children }: { title: string; note: string; trailing?: ReactNode; children: ReactNode }) {
-  return (
-    <article className="rounded-lg border border-border bg-surface px-5 py-4 shadow-sm">
-      <div className="flex min-h-6 flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-semibold">{title}</h2>{trailing}</div>
-      <div className="mt-3 grid grid-cols-2 divide-x divide-border">{children}</div>
-      <p className="mt-2 text-xs text-content-secondary">{note}</p>
-    </article>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: ReactNode }) {
-  return <div className="last:pl-5"><p className="text-xs text-content-secondary">{label}</p><div className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{value}</div></div>;
 }
 
 function Chevron({ direction }: { direction: "left" | "right" }) {
