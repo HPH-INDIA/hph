@@ -15,13 +15,8 @@ function currentMonthValue() {
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function formatMinutes(value: number | null) {
-  if (value === null) return "—";
-  return `${Math.floor(value / 60)}h ${String(value % 60).padStart(2, "0")}m`;
-}
-
-function formatTarget(value: string | null) {
-  return value === null ? "—" : Number(value).toFixed(1);
+function formatAdjustedCpd(value: string | null | undefined) {
+  return value == null ? "—" : Number(value).toFixed(2);
 }
 
 function formatCpd(value: string | null) {
@@ -107,7 +102,7 @@ function PersonalDashboardPage() {
           <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-card">
             <div className="border-b border-border px-5 py-4">
               <h2 className="font-semibold text-content-primary">Daily efficiency</h2>
-              <p className="text-sm text-content-muted">Days without both login hours and an active stage target remain unavailable.</p>
+              <p className="text-sm text-content-muted">Adjusted target CPD uses saved manual records and excludes Huddle meetings.</p>
             </div>
             {summary.daily.length === 0 ? (
               <p className="px-5 py-10 text-center text-sm text-content-muted">No efficiency data is available for this month.</p>
@@ -118,15 +113,14 @@ function PersonalDashboardPage() {
                     <tr>
                       <th className="px-4 py-3 font-medium">Date</th>
                       <th className="px-4 py-3 font-medium">Stage</th>
-                      <th className="px-4 py-3 font-medium">Target basis</th>
-                      <th className="px-4 py-3 font-medium">Manual charts</th>
-                      <th className="px-4 py-3 font-medium">Kairon charts</th>
-                      <th className="px-4 py-3 font-medium">Adjusted target</th>
-                      <th className="px-4 py-3 font-medium">Manual efficiency</th>
-                      <th className="px-4 py-3 font-medium">Kairon efficiency</th>
+                      <th className="px-4 py-3 font-medium">Manual charts completed</th>
+                      <th className="px-4 py-3 font-medium">Kairon charts completed</th>
+                      <th className="px-4 py-3 font-medium">Adjusted target CPD</th>
                       <th className="px-4 py-3 font-medium">Manual CPD</th>
                       <th className="px-4 py-3 font-medium">Kairon CPD</th>
                       <th className="px-4 py-3 font-medium">Target CPD</th>
+                      <th className="px-4 py-3 font-medium">Manual efficiency</th>
+                      <th className="px-4 py-3 font-medium">Kairon efficiency</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -134,15 +128,14 @@ function PersonalDashboardPage() {
                       <tr key={row.date}>
                         <td className="px-4 py-3 text-content-secondary">{new Date(`${row.date}T00:00:00`).toLocaleDateString()}</td>
                         <td className="px-4 py-3 text-content-secondary">{row.stage ?? "—"}</td>
-                        <td className="px-4 py-3 text-content-secondary">{formatMinutes(row.targetMinutes)}</td>
                         <td className="px-4 py-3 font-medium text-content-primary">{row.manualCharts}</td>
                         <td className="px-4 py-3 font-medium text-content-primary">{row.kaironCharts}</td>
-                        <td className="px-4 py-3 text-content-secondary">{formatTarget(row.adjustedTarget)}</td>
-                        <td className="px-4 py-3"><EfficiencyValue value={row.manualEfficiencyPercent} /></td>
-                        <td className="px-4 py-3"><EfficiencyValue value={row.kaironEfficiencyPercent} /></td>
+                        <td className="px-4 py-3 text-content-secondary">{formatAdjustedCpd(row.adjustedCpd)}</td>
                         <td className="px-4 py-3 font-medium text-content-primary">{formatCpd(row.manualCpd)}</td>
                         <td className="px-4 py-3 font-medium text-content-primary">{formatCpd(row.kaironCpd)}</td>
                         <td className="px-4 py-3 font-medium text-content-primary">{formatCpd(row.targetCpd)}</td>
+                        <td className="px-4 py-3"><EfficiencyValue value={row.manualEfficiencyPercent} /></td>
+                        <td className="px-4 py-3"><EfficiencyValue value={row.kaironEfficiencyPercent} /></td>
                       </tr>
                     ))}
                   </tbody>

@@ -754,6 +754,7 @@ export interface DailyEfficiency {
   productiveMinutes: number | null;
   targetMinutes: number | null;
   adjustedTarget: string | null;
+  adjustedCpd?: string | null;
   manualEfficiencyPercent: string | null;
   kaironEfficiencyPercent: string | null;
   manualCpd: string | null;
