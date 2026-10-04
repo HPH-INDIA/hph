@@ -118,9 +118,6 @@ function PersonalDashboardPage() {
                     <tr>
                       <th className="px-4 py-3 font-medium">Date</th>
                       <th className="px-4 py-3 font-medium">Stage</th>
-                      <th className="px-4 py-3 font-medium">Inside</th>
-                      <th className="px-4 py-3 font-medium">Excluded</th>
-                      <th className="px-4 py-3 font-medium">Productive</th>
                       <th className="px-4 py-3 font-medium">Target basis</th>
                       <th className="px-4 py-3 font-medium">Manual charts</th>
                       <th className="px-4 py-3 font-medium">Kairon charts</th>
@@ -137,9 +134,6 @@ function PersonalDashboardPage() {
                       <tr key={row.date}>
                         <td className="px-4 py-3 text-content-secondary">{new Date(`${row.date}T00:00:00`).toLocaleDateString()}</td>
                         <td className="px-4 py-3 text-content-secondary">{row.stage ?? "—"}</td>
-                        <td className="px-4 py-3 text-content-secondary">{formatMinutes(row.insideMinutes)}</td>
-                        <td className="px-4 py-3 text-content-secondary">{formatMinutes(row.excludedMinutes)}</td>
-                        <td className="px-4 py-3 text-content-secondary">{formatMinutes(row.productiveMinutes)}</td>
                         <td className="px-4 py-3 text-content-secondary">{formatMinutes(row.targetMinutes)}</td>
                         <td className="px-4 py-3 font-medium text-content-primary">{row.manualCharts}</td>
                         <td className="px-4 py-3 font-medium text-content-primary">{row.kaironCharts}</td>
@@ -163,8 +157,12 @@ function PersonalDashboardPage() {
 }
 
 function MonthlyGoalCard({ goal, manualCharts }: { goal: MonthlyGoalSummary; manualCharts?: number }) {
-  const progress = goal.targetCharts > 0
-    ? (goal.completedCharts / goal.targetCharts) * 100
+  const hasAdjustedGoal = goal.adjustedTargetCharts !== undefined;
+  const target = Number(goal.adjustedTargetCharts ?? goal.targetCharts);
+  const production = hasAdjustedGoal ? goal.manualCharts ?? manualCharts ?? 0 : goal.completedCharts;
+  const chartsLeft = Number(goal.adjustedDifference ?? goal.difference);
+  const progress = target > 0
+    ? (production / target) * 100
     : 0;
   const isTeam = goal.scope === "team";
 
@@ -182,17 +180,23 @@ function MonthlyGoalCard({ goal, manualCharts }: { goal: MonthlyGoalSummary; man
               </span>
             )}
           </div>
-          <h2 className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-content-primary">
-            <span className="text-3xl font-semibold tracking-tight tabular-nums">{goal.targetCharts.toLocaleString()}</span>
-            <span className="text-sm text-content-muted">monthly chart target</span>
-          </h2>
-          <p className="mt-2 text-sm text-content-secondary">Completed Kairon charts · full-month goal</p>
+          <div className="mt-4 grid gap-5 sm:grid-cols-2">
+            <div>
+              <p className="text-sm text-content-muted">Target goal charts</p>
+              <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums text-content-primary">{goal.targetCharts.toLocaleString()}</p>
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-brand-700">Adjusted target goal charts</h2>
+              <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums text-brand-700">{hasAdjustedGoal ? formatGoalCharts(target) : "—"}</p>
+            </div>
+          </div>
+          <p className="mt-3 text-sm text-content-secondary">{hasAdjustedGoal ? "Manual charts · adjusted full-month goal" : "Completed Kairon charts · full-month goal"}</p>
           <div role="progressbar" aria-label="Monthly goal completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(progress, 100)} aria-valuetext={`${progress.toFixed(1)}% complete`} className="mt-5 h-3 overflow-hidden rounded-full bg-surface-inset">
             <div className={`h-full rounded-full ${progress >= 100 ? "bg-success" : "bg-brand-600"} transition-all`} style={{ width: `${Math.min(progress, 100)}%` }} />
           </div>
           <div className="mt-2 flex justify-between text-xs text-content-muted">
             <span>{progress.toFixed(1)}% complete</span>
-            <span>{goal.completedCharts.toLocaleString()} completed</span>
+            <span>{production.toLocaleString()} {hasAdjustedGoal ? "manual charts" : "completed"}</span>
           </div>
         </div>
 
@@ -203,12 +207,13 @@ function MonthlyGoalCard({ goal, manualCharts }: { goal: MonthlyGoalSummary; man
             <GoalMetric label={isTeam ? "Team Kairon charts" : "Kairon charts"} value={goal.completedCharts} />
             <div className="px-3 text-center">
               <p className="text-sm font-bold text-brand-700">Charts left to achieve goal</p>
-              <p className="mt-2 text-5xl font-bold tracking-tight tabular-nums text-brand-700">{Math.max(0, goal.difference).toLocaleString()}</p>
-              <p className="mt-2 text-xs text-content-secondary">{goal.difference > 0 ? "Based on completed Kairon charts" : goal.difference < 0 ? `${Math.abs(goal.difference).toLocaleString()} charts above target` : "Goal achieved"}</p>
+              <p className="mt-2 text-5xl font-bold tracking-tight tabular-nums text-brand-700">{formatGoalCharts(Math.max(0, chartsLeft))}</p>
+              <p className="mt-2 text-xs text-content-secondary">{chartsLeft > 0 ? hasAdjustedGoal ? "Adjusted target minus manual charts" : "Based on completed Kairon charts" : chartsLeft < 0 ? `${formatGoalCharts(Math.abs(chartsLeft))} charts above target` : "Goal achieved"}</p>
             </div>
           </div>
         </div>
       </div>
+      {hasAdjustedGoal && <p className="border-t border-border px-6 py-3 text-xs text-content-muted">The adjusted target accounts for manual downtime, idle time, leave and meetings other than Huddle.</p>}
       <div className="flex flex-wrap gap-x-6 gap-y-2 border-t border-border bg-brand-50/50 px-5 py-3 text-xs text-content-secondary">
         <span><strong className="text-content-primary">{goal.eligibleDays}</strong> target workdays</span>
         <span><strong className="text-content-primary">{goal.holidayCount}</strong> weekday office holidays excluded</span>
@@ -225,6 +230,7 @@ function MonthlyGoalCard({ goal, manualCharts }: { goal: MonthlyGoalSummary; man
                   <th className="px-3 py-3 text-right font-medium">Manual charts</th>
                   <th className="px-3 py-3 text-right font-medium">Kairon charts</th>
                   <th className="px-3 py-3 text-right font-medium">Monthly target</th>
+                  <th className="px-3 py-3 text-right font-medium">Adjusted target</th>
                   <th className="py-3 pl-3 text-right font-bold">Charts left</th>
                 </tr></thead>
                 <tbody className="divide-y divide-border">
@@ -234,7 +240,8 @@ function MonthlyGoalCard({ goal, manualCharts }: { goal: MonthlyGoalSummary; man
                       <td className="px-3 py-4 text-right tabular-nums">{member.manualCharts.toLocaleString()}</td>
                       <td className="px-3 py-4 text-right tabular-nums">{member.completedCharts.toLocaleString()}</td>
                       <td className="px-3 py-4 text-right tabular-nums">{member.targetCharts.toLocaleString()}</td>
-                      <td className="py-4 pl-3 text-right font-bold tabular-nums text-brand-700">{Math.max(0, member.difference).toLocaleString()}</td>
+                      <td className="px-3 py-4 text-right tabular-nums">{member.adjustedTargetCharts === undefined ? "—" : formatGoalCharts(Number(member.adjustedTargetCharts))}</td>
+                      <td className="py-4 pl-3 text-right font-bold tabular-nums text-brand-700">{formatGoalCharts(Math.max(0, Number(member.adjustedDifference ?? member.difference)))}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -245,6 +252,10 @@ function MonthlyGoalCard({ goal, manualCharts }: { goal: MonthlyGoalSummary; man
       )}
     </article>
   );
+}
+
+function formatGoalCharts(value: number) {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
 }
 
 function GoalMetric({ label, value }: { label: string; value?: number }) {

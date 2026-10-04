@@ -51,6 +51,8 @@ export class UploadManager {
   private listeners = new Set<() => void>();
   private userId: number | null | undefined;
   private sessionController?: AbortController;
+  private retiredIds = new Set<string>();
+  private completionTimers = new Map<string, ReturnType<typeof setTimeout>>();
   constructor(private transport: UploadTransport,
     private buildFile = buildImportFile,
     private wait = delay) {}
@@ -64,7 +66,15 @@ export class UploadManager {
     this.update(progress.id, { progress, status: progress.status, processedCount: progress.processedCount,
       totalRows: progress.totalRows, error: progress.error ?? undefined });
     if (progress.status === "completed") {
+      this.retiredIds.add(progress.id);
       this.work.delete(progress.id);
+      // Success is transient; server history must never recreate this notification.
+      if (!this.completionTimers.has(progress.id)) {
+        this.completionTimers.set(progress.id, setTimeout(() => {
+          this.completionTimers.delete(progress.id);
+          this.remove(progress.id);
+        }, 8000));
+      }
       this.transport.invalidate();
       return true;
     }
@@ -99,9 +109,16 @@ export class UploadManager {
     const controller = new AbortController();
     void this.transport.abandon(id, controller.signal).then(() => this.remove(id)).catch((error) => this.update(id, { error: getErrorMessage(error) }));
   };
-  private remove(id: string) { this.work.get(id)?.controller?.abort(); this.work.delete(id); this.jobs = this.jobs.filter((job) => job.id !== id); this.emit(); }
+  private remove(id: string) {
+    clearTimeout(this.completionTimers.get(id));
+    this.completionTimers.delete(id);
+    this.retiredIds.add(id);
+    this.work.get(id)?.controller?.abort(); this.work.delete(id); this.jobs = this.jobs.filter((job) => job.id !== id); this.emit(); }
   clear = () => {
     this.sessionController?.abort();
+    for (const timer of this.completionTimers.values()) clearTimeout(timer);
+    this.completionTimers.clear();
+    this.retiredIds.clear();
     for (const work of this.work.values()) work.controller?.abort();
     this.work.clear(); this.jobs = []; this.emit();
   };
@@ -113,10 +130,11 @@ export class UploadManager {
     void this.transport.list(controller.signal).then((jobs) => {
       if (controller.signal.aborted || this.userId !== userId) return;
       for (const progress of jobs) {
-        if (this.work.has(progress.id) || progress.status === "abandoned") continue;
+        if (progress.status === "completed" || progress.status === "abandoned" || this.retiredIds.has(progress.id) ||
+          this.jobs.some((job) => job.id === progress.id)) continue;
         this.jobs = [...this.jobs, { id: progress.id, kind: progress.kind, fileName: progress.sourceFilename,
           status: progress.status, processedCount: progress.processedCount, totalRows: progress.totalRows, progress, error: progress.error ?? undefined }];
-        if (progress.status !== "completed") {
+        {
           const work: Work = { transfer: {}, running: false }; this.work.set(progress.id, work);
           if (progress.status !== "failed") this.launch(progress.id, work);
         }

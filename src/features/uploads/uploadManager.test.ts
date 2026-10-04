@@ -137,3 +137,41 @@ test("signed TUS creation uses the signed endpoint and upload content type", asy
     assert.equal(created, true);
   } finally { globalThis.fetch = original; }
 });
+
+
+test("completed history is never restored, including after dismissal and another login", async () => {
+  const { manager } = harness({ async list() { return [progress("old-success", "completed")]; } });
+  manager.setSession(1);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(manager.getSnapshot(), []);
+  const id = manager.start(input());
+  await until(() => manager.getSnapshot()[0]?.status === "completed");
+  manager.dismiss(id);
+  manager.setSession(null);
+  manager.setSession(1);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(manager.getSnapshot(), []);
+});
+
+test("success expires automatically without user action", async (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const { manager } = harness();
+  manager.start(input());
+  await until(() => manager.getSnapshot()[0]?.status === "completed");
+  context.mock.timers.tick(7999);
+  assert.equal(manager.getSnapshot()[0]?.status, "completed");
+  context.mock.timers.tick(1);
+  assert.deepEqual(manager.getSnapshot(), []);
+});
+
+test("a delayed recovery response cannot duplicate a newly completed notification", async () => {
+  let resolve!: (jobs: FileImportProgress[]) => void;
+  const { manager } = harness({ list: () => new Promise((res) => { resolve = res; }) });
+  manager.setSession(1);
+  const id = manager.start(input());
+  await until(() => manager.getSnapshot()[0]?.status === "completed");
+  manager.dismiss(id);
+  resolve([progress(id, "queued")]);
+  await new Promise<void>((res) => setImmediate(res));
+  assert.deepEqual(manager.getSnapshot(), []);
+});

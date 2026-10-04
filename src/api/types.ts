@@ -451,6 +451,8 @@ export interface ManualMeeting {
 // (ManualDailyRecordSchema). The four hour fields come back as strings
 // (as_string=True on the backend's Decimal field).
 export interface ManualDailyRecord {
+  dailyTarget?: number | null;
+  adjustedCpd?: string | null;
   id: number;
   userId: number;
   date: string;
@@ -781,7 +783,19 @@ export interface EfficiencySummary {
 
 export interface MonthlyGoalSummary {
   manualCharts?: number;
-  users?: { userId: number; name: string; manualCharts: number; completedCharts: number; targetCharts: number; difference: number }[];
+  adjustedTargetCharts?: string;
+  // Adjusted monthly target minus manual charts.
+  adjustedDifference?: string;
+  users?: {
+    userId: number;
+    name: string;
+    manualCharts: number;
+    completedCharts: number;
+    targetCharts: number;
+    difference: number;
+    adjustedTargetCharts?: string;
+    adjustedDifference?: string;
+  }[];
   month: string;
   scope: "self" | "team";
   userCount: number;

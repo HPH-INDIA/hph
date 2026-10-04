@@ -464,6 +464,8 @@ export function ReportsManualTab() {
                     <th className="px-4 py-3 font-medium">PVP</th>
                     <th className="px-4 py-3 font-medium">Foundation</th>
                     <th className="px-4 py-3 font-medium">Total</th>
+                    <th className="px-4 py-3 font-medium">Target CPD</th>
+                    <th className="px-4 py-3 font-medium" title="8 hours minus downtime, idle, leave and non-Huddle meetings, multiplied by the stage target / 8">Adjusted CPD</th>
                     <th className="px-4 py-3 font-medium">Downtime</th>
                     <th className="px-4 py-3 font-medium">Idle</th>
                     <th className="px-4 py-3 font-medium">Leave</th>
@@ -479,6 +481,8 @@ export function ReportsManualTab() {
                       <td className="px-4 py-3 text-content-secondary">{record.pvpCount}</td>
                       <td className="px-4 py-3 text-content-secondary">{record.foundationCount}</td>
                       <td className="px-4 py-3 font-medium text-content-primary">{record.productionCount}</td>
+                      <td className="px-4 py-3 text-content-secondary">{record.dailyTarget ?? "—"}</td>
+                      <td className="px-4 py-3 text-content-secondary">{record.adjustedCpd ?? "—"}</td>
                       <td className="px-4 py-3 text-content-secondary">{record.techIssuesDowntimeHours}</td>
                       <td className="px-4 py-3 text-content-secondary">{record.noInventoryIdleTimeHours}</td>
                       <td className="px-4 py-3 text-content-secondary">{record.leaveHours}</td>
