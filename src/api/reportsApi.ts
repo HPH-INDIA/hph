@@ -25,6 +25,8 @@ import type {
   MonthlyGoalSummary,
   LeadDashboardQuery,
   LeadDashboardSummary,
+  ManagerDashboardQuery,
+  ManagerDashboardSummary,
   PaginatedResult,
   PaginationQuery,
   SelfKaironChartQuery,
@@ -121,6 +123,10 @@ export const reportsApi = apiSlice.injectEndpoints({
       query: (args) => ({ url: `/dashboards/lead${buildQueryString(args)}` }),
       providesTags: [{ type: "CodingDashboard" }, { type: "Users", id: "LIST" }, { type: "Team" }],
     }),
+    getManagerDashboard: builder.query<ManagerDashboardSummary, ManagerDashboardQuery>({
+      query: (args) => ({ url: `/dashboards/manager${buildQueryString(args)}` }),
+      providesTags: [{ type: "CodingDashboard" }, { type: "Users", id: "LIST" }, { type: "Team" }],
+    }),
     getMyEfficiency: builder.query<EfficiencySummary, CodingDashboardQuery | void>({
       query: (args) => ({ url: `/dashboards/my-efficiency${buildQueryString({ ...args })}` }),
       providesTags: [{ type: "CodingDashboard" }],
@@ -150,5 +156,6 @@ export const {
   useGetCodingDashboardQuery,
   useGetMyEfficiencyQuery,
   useGetLeadDashboardQuery,
+  useGetManagerDashboardQuery,
   useGetMonthlyGoalQuery,
 } = reportsApi;

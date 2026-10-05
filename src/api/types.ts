@@ -845,3 +845,31 @@ export interface LeadDashboardSummary {
   qa: LeadPerformanceSection;
   coders: LeadPerformanceSection;
 }
+
+
+export type ManagerDashboardQuery = LeadDashboardQuery & Pick<CodingDashboardQuery, "leadId" | "cohortId" | "program">;
+export interface ManagerCoderOption {
+  userId: number; name: string; isActive: boolean; leadId: number | null; cohortId: number | null;
+}
+export interface ManagerPerformanceMember {
+  userId: number; name: string; isActive: boolean; leadId: number | null; empId: string | null;
+  roleType: "lead" | "employee";
+  efficiency: Omit<EfficiencySummary, "daily">;
+}
+export interface ManagerPerformanceTeam {
+  key: string;
+  lead: { userId: number; name: string; isActive: boolean } | null;
+  qa: LeadPerformanceSection;
+  coders: LeadPerformanceSection;
+}
+export interface ManagerDashboardSummary {
+  from: string; to: string;
+  leadOptions: { userId: number; name: string; isActive: boolean }[];
+  coderOptions: ManagerCoderOption[];
+  cohortOptions: { id: number; label: string }[];
+  overall: Omit<EfficiencySummary, "daily">;
+  qa: LeadPerformanceSection;
+  coders: LeadPerformanceSection;
+  teams: ManagerPerformanceTeam[];
+  members: ManagerPerformanceMember[];
+}
