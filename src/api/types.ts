@@ -766,6 +766,8 @@ export interface EfficiencySummary {
   manualCharts: number;
   kaironCharts: number;
   adjustedTarget: string;
+  // Sum of saved manual adjusted targets for the selected reporting period.
+  adjustedCpd?: string | null;
   insideMinutes: number;
   loginDays: number;
   productiveMinutes: number;

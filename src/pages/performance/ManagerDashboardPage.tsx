@@ -215,12 +215,12 @@ function MemberTable({ members, role, onPick, exportName }: { members: ManagerPe
       <MemberPerformanceExport members={sortedMembers} exportName={exportName} nameLabel={role === "lead" ? "Lead" : "Coder"} />
     </div>
     <div className="min-w-0 overflow-x-auto" tabIndex={0} role="region" aria-label={role === "lead" ? "Lead performance table" : "Coder performance table"}>
-    <table className="w-full min-w-[980px] text-left text-sm">
+    <table className="w-full min-w-[1120px] text-left text-sm">
       <caption className="sr-only">{role === "lead" ? "QA lead" : "Coder"} results for the selected period. Select a name to filter the dashboard.</caption>
-      <thead className="bg-surface-muted text-xs text-content-secondary"><tr>{columns.map((column, index) => <SortableHeader key={column.key} column={column} sort={sort} onSort={setSort} align={index ? "right" : "left"} className="px-4 py-3 font-medium" />)}</tr></thead>
+      <thead className="bg-surface-muted text-xs text-content-secondary"><tr>{columns.map((column, index) => <SortableHeader key={column.key} column={column} sort={sort} onSort={setSort} align={index ? "right" : "left"} className={`px-4 py-3 font-medium ${column.key === "adjustedCpd" ? "bg-brand-50 text-brand-600" : ""}`} />)}</tr></thead>
       <tbody className="divide-y divide-border">{sortedMembers.map((member) => <tr key={member.userId} className="hover:bg-brand-50/50">
         <th scope="row" className="px-4 py-3 font-normal"><button onClick={() => onPick(member)} className="rounded text-left font-medium text-brand-700 underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-brand-500">{member.name}</button>{!member.isActive && <div className="mt-1 text-xs text-content-secondary">Inactive</div>}</th>
-        {[member.efficiency.manualCharts, member.efficiency.kaironCharts, member.efficiency.manualCpd, member.efficiency.kaironCpd, member.efficiency.targetCpd].map((value, index) => <td key={index} className="px-4 py-3 text-right tabular-nums">{numberLabel(value, index < 2 ? 0 : 1)}</td>)}
+        {[member.efficiency.manualCharts, member.efficiency.kaironCharts, member.efficiency.adjustedCpd, member.efficiency.manualCpd, member.efficiency.kaironCpd, member.efficiency.targetCpd].map((value, index) => <td key={index} className={`px-4 py-3 text-right tabular-nums ${index === 2 ? "bg-brand-50 font-semibold text-brand-600" : ""}`}>{numberLabel(value, index < 2 ? 0 : index === 2 ? 2 : 1)}</td>)}
         <td className="px-4 py-3 text-right"><EfficiencyValue value={member.efficiency.manualEfficiencyPercent} /></td><td className="px-4 py-3 text-right"><EfficiencyValue value={member.efficiency.kaironEfficiencyPercent} /></td>
       </tr>)}</tbody>
     </table>

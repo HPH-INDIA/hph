@@ -62,10 +62,11 @@ export function dailyCsv(rows: DailyEfficiency[]) {
 }
 
 export function memberCsv(members: CoderPerformanceMember[], nameLabel: "Coder" | "Lead" = "Coder") {
-  const headers = [nameLabel, "Manual charts", "Kairon charts", "Manual CPD", "Kairon CPD",
+  const headers = [nameLabel, "Manual charts completed", "Kairon charts completed", "Adjusted target CPD", "Manual CPD", "Kairon CPD",
     "Target CPD", "Manual efficiency (%)", "Kairon efficiency (%)"];
   const body = members.map(({ name, efficiency }) => [name,
     efficiency?.manualCharts ?? 0, efficiency?.kaironCharts ?? 0,
+    efficiency?.adjustedCpd,
     efficiency?.manualCpd, efficiency?.kaironCpd, efficiency?.targetCpd,
     efficiency?.manualEfficiencyPercent, efficiency?.kaironEfficiencyPercent]);
   return [headers, ...body].map((row) => row.map(csvCell).join(",")).join("\r\n");
