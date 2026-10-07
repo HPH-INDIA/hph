@@ -39,8 +39,7 @@ export function CoderPerformancePanel({ members, loading, error, onRetry, rows, 
     </div>
     <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${view}`}>
       {view === "coder" ? <div className="border-t border-border">
-        <p className="px-5 py-3 text-xs text-content-secondary">Totals for the selected period. Select a coder’s name to focus their results.</p>
-        {error ? <ErrorState message={error} onRetry={onRetry} /> : loading ? <LoadingState label="Loading coder results…" /> : <CoderPerformanceTable members={members} caption={`Coder totals · ${periodLabel}`} onPick={onPick} />}
+        {error ? <ErrorState message={error} onRetry={onRetry} /> : loading ? <LoadingState label="Loading coder results…" /> : <CoderPerformanceTable members={members} caption={`Coder totals · ${periodLabel}`} onPick={onPick} exportName={`${exportName}-by-coder`} />}
       </div> : <DailyPerformance key={`${from}-${to}`} rows={rows} month={from.slice(0, 7)} periodLabel={periodLabel} title="Combined coder daily performance"
         description="Select a day to see each coder’s charts, CPD, and efficiency. Coders with no records are included."
         exportName={exportName} showYear renderDayDetails={renderDayDetails} embedded />}

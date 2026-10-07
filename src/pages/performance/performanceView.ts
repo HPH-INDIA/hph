@@ -1,4 +1,5 @@
 import type { DailyEfficiency } from "@/api/types";
+import type { CoderPerformanceMember } from "@/api/coderPerformance";
 
 export type PerformanceFilter = "all" | "below" | "achieved" | "unavailable";
 
@@ -54,14 +55,25 @@ export function filterDays(rows: DailyEfficiency[], filter: PerformanceFilter, s
 export function dailyCsv(rows: DailyEfficiency[]) {
   const headers = ["Date", "Stage", "Manual charts completed", "Kairon charts completed", "Adjusted target CPD",
     "Manual CPD", "Kairon CPD", "Target CPD", "Manual efficiency (%)", "Kairon efficiency (%)"];
-  const escape = (value: unknown) => {
-    const text = String(value ?? "");
-    // Keep stage labels as text when the CSV is opened in a spreadsheet.
-    const safe = typeof value === "string" && /^\s*[=+@-]/.test(text) ? `'${text}` : text;
-    return `"${safe.replaceAll('"', '""')}"`;
-  };
   const body = rows.map((row) => [row.date, row.stage, row.manualCharts, row.kaironCharts,
     row.adjustedCpd, row.manualCpd, row.kaironCpd, row.targetCpd,
     row.manualEfficiencyPercent, row.kaironEfficiencyPercent]);
-  return [headers, ...body].map((row) => row.map(escape).join(",")).join("\r\n");
+  return [headers, ...body].map((row) => row.map(csvCell).join(",")).join("\r\n");
+}
+
+export function memberCsv(members: CoderPerformanceMember[], nameLabel: "Coder" | "Lead" = "Coder") {
+  const headers = [nameLabel, "Manual charts", "Kairon charts", "Manual CPD", "Kairon CPD",
+    "Target CPD", "Manual efficiency (%)", "Kairon efficiency (%)"];
+  const body = members.map(({ name, efficiency }) => [name,
+    efficiency?.manualCharts ?? 0, efficiency?.kaironCharts ?? 0,
+    efficiency?.manualCpd, efficiency?.kaironCpd, efficiency?.targetCpd,
+    efficiency?.manualEfficiencyPercent, efficiency?.kaironEfficiencyPercent]);
+  return [headers, ...body].map((row) => row.map(csvCell).join(",")).join("\r\n");
+}
+
+function csvCell(value: unknown) {
+  const text = String(value ?? "");
+  // Keep names and labels as text when the CSV is opened in a spreadsheet.
+  const safe = typeof value === "string" && /^\s*[=+@-]/.test(text) ? `'${text}` : text;
+  return `"${safe.replaceAll('"', '""')}"`;
 }

@@ -22,6 +22,7 @@ import { ReportingPeriodFields, performanceInputClass } from "./ReportingPeriodF
 import { dateRangeLabel, leadPeriodLabel, loadLeadFilters, localDayValue, saveLeadFilters } from "./leadFilters";
 import { changeManagerScope, defaultManagerFilters, managerDashboardQuery, managerFilterError, matchingCoders, type ManagerFilters, type ManagerView } from "./managerFilters";
 import { numberLabel } from "./performanceView";
+import { MemberPerformanceExport } from "./MemberPerformanceExport";
 
 const views: { value: ManagerView; label: string; description: string }[] = [
   { value: "teams", label: "Teams by lead", description: "Explore each lead’s QA and coder performance." },
@@ -194,7 +195,8 @@ function ManagerSection({ title, context, section, monthly, members, role, onPic
         from={section.efficiency.from} to={section.efficiency.to} periodLabel={dateRangeLabel(section.efficiency.from, section.efficiency.to)} onPick={pickCoder}
         exportName={`manager-coders-${section.efficiency.from}-to-${section.efficiency.to}`}
         renderDayDetails={(date) => <ManagerCoderDay date={date} scope={scope} members={members} onPick={pickCoder} />} /> : <>
-      <MemberTable members={members} role={role} onPick={onPickMember} />
+      <MemberTable members={members} role={role} onPick={onPickMember}
+        exportName={`manager-qa-${members.length === 1 ? members[0].userId : "combined"}-${section.efficiency.from}-to-${section.efficiency.to}-by-lead`} />
       <details className="group min-w-0 rounded-lg border border-border bg-surface">
         <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg px-5 py-3 text-sm font-medium focus-visible:ring-2 focus-visible:ring-brand-500 [&::-webkit-details-marker]:hidden">{role === "lead" ? "QA" : "Coder"} daily performance<span className="text-lg group-open:rotate-45" aria-hidden="true">+</span></summary>
         <DailyPerformance rows={section.efficiency.daily} month={section.efficiency.from.slice(0, 7)} periodLabel={dateRangeLabel(section.efficiency.from, section.efficiency.to)} title={`${title} · daily totals`} description="Daily chart counts, saved adjusted targets, CPD, and efficiency." exportName={`manager-${role}-${members.length === 1 ? members[0].userId : "combined"}-${section.efficiency.from}-to-${section.efficiency.to}`} showYear />
@@ -203,11 +205,16 @@ function ManagerSection({ title, context, section, monthly, members, role, onPic
     </>}
   </section>;
 }
-function MemberTable({ members, role, onPick }: { members: ManagerPerformanceMember[]; role: "lead" | "employee"; onPick: (member: ManagerPerformanceMember) => void }) {
+function MemberTable({ members, role, onPick, exportName }: { members: ManagerPerformanceMember[]; role: "lead" | "employee"; onPick: (member: ManagerPerformanceMember) => void; exportName: string }) {
   const [sort, setSort] = useState<TableSort>({ key: "name", direction: "asc" });
   const columns = coderColumns.map((column) => column.key === "name" ? { ...column, label: role === "lead" ? "Lead" : "Coder" } : column);
   const sortedMembers = sortTableRows(members, columns, sort);
-  return <div className="min-w-0 overflow-x-auto rounded-lg border border-border bg-surface" tabIndex={0} role="region" aria-label={role === "lead" ? "Lead performance table" : "Coder performance table"}>
+  return <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-surface">
+    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+      <div><h4 className="text-sm font-semibold">{role === "lead" ? "QA" : "Coder"} performance</h4><p className="mt-1 text-xs text-content-secondary">Totals for the selected period.</p></div>
+      <MemberPerformanceExport members={sortedMembers} exportName={exportName} nameLabel={role === "lead" ? "Lead" : "Coder"} />
+    </div>
+    <div className="min-w-0 overflow-x-auto" tabIndex={0} role="region" aria-label={role === "lead" ? "Lead performance table" : "Coder performance table"}>
     <table className="w-full min-w-[980px] text-left text-sm">
       <caption className="sr-only">{role === "lead" ? "QA lead" : "Coder"} results for the selected period. Select a name to filter the dashboard.</caption>
       <thead className="bg-surface-muted text-xs text-content-secondary"><tr>{columns.map((column, index) => <SortableHeader key={column.key} column={column} sort={sort} onSort={setSort} align={index ? "right" : "left"} className="px-4 py-3 font-medium" />)}</tr></thead>
@@ -217,5 +224,6 @@ function MemberTable({ members, role, onPick }: { members: ManagerPerformanceMem
         <td className="px-4 py-3 text-right"><EfficiencyValue value={member.efficiency.manualEfficiencyPercent} /></td><td className="px-4 py-3 text-right"><EfficiencyValue value={member.efficiency.kaironEfficiencyPercent} /></td>
       </tr>)}</tbody>
     </table>
+    </div>
   </div>;
 }

@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { DailyEfficiency } from "@/api/types";
+import type { CoderPerformanceMember } from "@/api/coderPerformance";
 
-import { dailyCsv, filterDays, numberLabel, shiftMonth } from "./performanceView";
+import { dailyCsv, filterDays, memberCsv, numberLabel, shiftMonth } from "./performanceView";
 
 function day(date: string, efficiency: string | null, overrides: Partial<DailyEfficiency> = {}): DailyEfficiency {
   return {
@@ -45,4 +46,29 @@ test("export uses the saved adjusted CPD, keeps zero distinct from missing, and 
 test("month navigation crosses year boundaries without day rollover", () => {
   assert.equal(shiftMonth("2026-01", -1), "2025-12");
   assert.equal(shiftMonth("2025-12", 1), "2026-01");
+});
+
+test("member export preserves selected row order, raw metrics, zero and missing values", () => {
+  const members: CoderPerformanceMember[] = [
+    { userId: 2, name: "Zoya", isActive: false, efficiency: {
+      manualCharts: 0, kaironCharts: 12, manualCpd: "0.00", kaironCpd: "12.345",
+      targetCpd: "30.00", manualEfficiencyPercent: "0.0", kaironEfficiencyPercent: null,
+    } },
+    { userId: 1, name: "Alex", isActive: true, efficiency: null },
+  ];
+  const lines = memberCsv(members).split("\r\n");
+  assert.equal(lines[0], '"Coder","Manual charts","Kairon charts","Manual CPD","Kairon CPD","Target CPD","Manual efficiency (%)","Kairon efficiency (%)"');
+  assert.equal(lines[1], '"Zoya","0","12","0.00","12.345","30.00","0.0",""');
+  assert.equal(lines[2], '"Alex","0","0","","","","",""');
+  assert.equal(memberCsv(members.slice(1)).split("\r\n").length, 2);
+  assert.deepEqual(members.map((member) => member.userId), [2, 1]);
+});
+
+test("QA export uses lead headers and safely escapes names for spreadsheets", () => {
+  const member = (name: string): CoderPerformanceMember => ({ userId: 1, name, isActive: true, efficiency: null });
+  const csv = memberCsv([member('Zoë, "QA"\nLead'), member(" =1+1"), member("+SUM(A1)"), member("@name"), member("-name")], "Lead");
+  assert.ok(csv.startsWith('"Lead","Manual charts"'));
+  assert.ok(csv.includes('"Zoë, ""QA""\nLead"'));
+  for (const name of [" =1+1", "+SUM(A1)", "@name", "-name"]) assert.ok(csv.includes(`"'${name}"`));
+  assert.equal(memberCsv([], "Lead").split("\r\n").length, 1);
 });

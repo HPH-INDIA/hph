@@ -5,14 +5,16 @@ import { coderColumns } from "./performanceColumns";
 import type { CoderPerformanceMember } from "@/api/coderPerformance";
 import { EfficiencyValue } from "./EfficiencyValue";
 import { numberLabel } from "./performanceView";
+import { MemberPerformanceExport } from "./MemberPerformanceExport";
 
 const headers = ["Manual charts", "Kairon charts", "Manual CPD", "Kairon CPD", "Target CPD", "Manual efficiency", "Kairon efficiency"];
 
-export function CoderPerformanceTable({ members, caption, onPick, day = false }: {
+export function CoderPerformanceTable({ members, caption, onPick, day = false, exportName }: {
   members: CoderPerformanceMember[];
   caption: string;
   onPick?: (userId: number) => void;
   day?: boolean;
+  exportName?: string;
 }) {
   const [sort, setSort] = useState<TableSort>({ key: "name", direction: "asc" });
   const sortedMembers = sortTableRows(members, coderColumns, sort);
@@ -29,6 +31,10 @@ export function CoderPerformanceTable({ members, caption, onPick, day = false }:
     <EfficiencyValue value={member.efficiency?.kaironEfficiencyPercent ?? null} />,
   ];
   return <>
+    {exportName && <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+      <p className="text-xs text-content-secondary">Totals for the selected period.{onPick ? " Select a coder’s name to focus their results." : ""}</p>
+      <MemberPerformanceExport members={sortedMembers} exportName={exportName} />
+    </div>}
     <div className="hidden min-w-0 overflow-x-auto sm:block" tabIndex={0} role="region" aria-label={caption}>
       <table className="w-full min-w-[980px] text-left text-sm">
         <caption className="sr-only">{caption}</caption>
