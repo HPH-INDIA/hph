@@ -12,12 +12,12 @@ import {
 import { useListRolesQuery, useListRoleTypesQuery } from "@/api/rolesApi";
 import { getFieldErrors, toFormikErrors } from "@/api/apiError";
 import {
-  PROJECTS,
   PROJECT_FORBIDDEN_ROLE_TYPES,
   PROJECT_REQUIRED_ROLE_TYPES,
   type RoleTypeCode,
   type UserCreatePayload,
 } from "@/api/types";
+import { useProjectOptionsQuery } from "@/api/projectsApi";
 import { Button } from "@/components/ui/Button";
 import { SelectField, TextField } from "@/components/ui/FormField";
 import { ErrorState, LoadingState } from "@/components/ui/StateViews";
@@ -49,6 +49,7 @@ export function UserFormPage() {
     isError: isUserError,
     refetch: refetchUser,
   } = useGetUserQuery(userId as number, { skip: !isEditMode });
+  const { data: projects = [], isLoading: isLoadingProjects, isError: isProjectsError, refetch: refetchProjects } = useProjectOptionsQuery();
   const { data: roles, isLoading: isLoadingRoles } = useListRolesQuery();
   const { data: roleTypes, isLoading: isLoadingRoleTypes } = useListRoleTypesQuery();
   const { data: activeUsers, isLoading: isLoadingActiveUsers } = useListUsersQuery("active");
@@ -60,8 +61,9 @@ export function UserFormPage() {
   const { notifyInfo } = useToast();
   const { canManageRoleType, user: currentUser } = useAuth();
 
-  const isLoading = isLoadingRoles || isLoadingRoleTypes || isLoadingActiveUsers || (isEditMode && isLoadingUser);
+  const isLoading = isLoadingProjects || isLoadingRoles || isLoadingRoleTypes || isLoadingActiveUsers || (isEditMode && isLoadingUser);
   if (isLoading) return <LoadingState label="Loading…" />;
+  if (isProjectsError) return <ErrorState message="Couldn’t load projects." onRetry={refetchProjects} />;
   if (isEditMode && isUserError) return <ErrorState message="Couldn't load this user." onRetry={refetchUser} />;
   if (isEditMode && !user) return <ErrorState message="That user could not be found." />;
 
@@ -217,7 +219,7 @@ export function UserFormPage() {
               </SelectField>
               {rule !== "forbidden" && (
                 <SelectField label="Project" name="project_id" placeholder="Select a project…">
-                  {PROJECTS.map((project) => (
+                  {projects.map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.name}
                     </option>

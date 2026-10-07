@@ -23,10 +23,14 @@ export interface ManagerTeamQuery {
   leadId?: number | null;
 }
 
+// Also suppress cached or older-server Super Admin rows before they reach any UI.
+const visibleUsers = (users: AdminUser[]) => users.filter((user) => user.role.roleType !== "super_admin");
+
 export const usersApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     listUsers: builder.query<AdminUser[], UserStatusFilter>({
       query: (status) => ({ url: LIST_PATH[status] }),
+      transformResponse: visibleUsers,
       providesTags: (result) => providesList("Users", result),
     }),
     // GET /users/filter — scopes the list down to a project + role set
@@ -35,6 +39,7 @@ export const usersApi = apiSlice.injectEndpoints({
     // project's hierarchy (e.g. Kairon's Analyst(s) filter).
     listUsersFiltered: builder.query<AdminUser[], UserFilterParams>({
       query: (params) => ({ url: `/users/filter${buildQueryString(params)}` }),
+      transformResponse: visibleUsers,
       providesTags: (result) => providesList("Users", result),
     }),
     getUser: builder.query<AdminUser, number>({
@@ -54,7 +59,7 @@ export const usersApi = apiSlice.injectEndpoints({
     }),
     createUser: builder.mutation<AdminUser, UserCreatePayload>({
       query: (body) => ({ url: "/users", method: "POST", body }),
-      invalidatesTags: [{ type: "Users", id: "LIST" }],
+      invalidatesTags: [{ type: "Users", id: "LIST" }, { type: "Projects", id: "LIST" }],
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         await notifyOnSettle(dispatch, queryFulfilled);
       },
@@ -64,6 +69,7 @@ export const usersApi = apiSlice.injectEndpoints({
       invalidatesTags: (_result, _error, { id }) => [
         { type: "Users", id },
         { type: "Users", id: "LIST" },
+        { type: "Projects", id: "LIST" },
       ],
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         await notifyOnSettle(dispatch, queryFulfilled);
@@ -78,6 +84,7 @@ export const usersApi = apiSlice.injectEndpoints({
       invalidatesTags: (_result, _error, { id }) => [
         { type: "Users", id },
         { type: "Users", id: "LIST" },
+        { type: "Projects", id: "LIST" },
       ],
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         await notifyOnSettle(dispatch, queryFulfilled);

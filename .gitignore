@@ -23,3 +23,7 @@ yarn-error.log*
 
 # TypeScript build info
 *.tsbuildinfo
+
+# Docker Compose environment overrides
+.env.compose
+!.env.compose.example

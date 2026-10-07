@@ -9,14 +9,12 @@ import {
   useGetKaironTeamRecordsQuery,
 } from "@/api/reportsApi";
 import type { KaironChartRecord, KaironChartSummary, KaironCompletedDailyCount, ManualTeamUser } from "@/api/types";
-import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { PaginationControls } from "@/components/ui/PaginationControls";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { useAuth } from "@/features/auth/useAuth";
 
-import { ManualReportFilters, type PeriodMode } from "./ManualReportFilters";
-import { isReportWindow, reportToday, type ManualReportWindow } from "./manualReportSummary";
+import { type ManualReportWindow } from "./manualReportSummary";
 
 const number = (value: number) => value.toLocaleString();
 
@@ -182,13 +180,13 @@ function DayCountTable({ days, onSelect }: {
   );
 }
 
-export function KaironCoderReport() {
+export function KaironCoderReport({ window }: { window: ManualReportWindow }) {
   const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [selectedDay, setSelectedDay] = useState<KaironCompletedDailyCount | null>(null);
   const [recordPage, setRecordPage] = useState(1);
   const { currentData, isFetching, isError, refetch } = useGetKaironCompletedCountsQuery(
-    { page, pageSize: 25 }, { refetchOnMountOrArgChange: true },
+    { ...window, page, pageSize: 25 }, { refetchOnMountOrArgChange: true },
   );
   const {
     currentData: dayRecords,
@@ -248,16 +246,11 @@ export function KaironCoderReport() {
   );
 }
 
-export function KaironLeadReport() {
+export function KaironLeadReport({ window }: { window: ManualReportWindow }) {
   const { user } = useAuth();
   const [holdPage, setHoldPage] = useState(1);
   const [selectedMember, setSelectedMember] = useState<KaironTeamMember | null>(null);
   const [recordPage, setRecordPage] = useState(1);
-  const [window, setWindow] = useState<ManualReportWindow>(() => ({ fromDate: reportToday(), toDate: reportToday() }));
-  const [appliedMode, setAppliedMode] = useState<PeriodMode>("day");
-  const [draftWindow, setDraftWindow] = useState(window);
-  const [draftMode, setDraftMode] = useState<PeriodMode>(appliedMode);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const { currentData, isFetching, isError, error, refetch } = useGetKaironLeadTeamRangeQuery(
     window, { skip: !user, refetchOnMountOrArgChange: true },
   );
@@ -288,19 +281,6 @@ export function KaironLeadReport() {
     onHold: total.onHold + coder.summary.onHold,
     total: total.total + coder.summary.total,
   }), { pvp: 0, foundation: 0, onHold: 0, total: 0 });
-  const closeFilters = () => {
-    setDraftWindow(window);
-    setDraftMode(appliedMode);
-    setFiltersOpen(false);
-  };
-  const applyFilters = () => {
-    if (!isReportWindow(draftWindow)) return;
-    setWindow(draftWindow);
-    setAppliedMode(draftMode);
-    setSelectedMember(null);
-    setRecordPage(1);
-    setFiltersOpen(false);
-  };
   const openMemberRecords = (member: KaironTeamMember) => {
     setSelectedMember(member);
     setRecordPage(1);
@@ -313,23 +293,10 @@ export function KaironLeadReport() {
           <h2 className="text-base font-semibold text-content-primary">Kairon team records</h2>
           <p className="text-sm text-content-muted">Review completed charts for your team. Current holds appear below.</p>
         </div>
-        <Button type="button" variant="secondary" onClick={() => {
-          setDraftWindow(window);
-          setDraftMode(appliedMode);
-          setFiltersOpen(true);
-        }}>Filters</Button>
+
       </div>
 
-      <Drawer open={filtersOpen} onClose={closeFilters} title="Kairon report filters"
-        description="Choose a day, month, or custom date range." widthClass="max-w-md">
-        <div className="flex flex-col gap-6">
-          <ManualReportFilters mode={draftMode} value={draftWindow} onModeChange={setDraftMode} onChange={setDraftWindow} />
-          <div className="grid grid-cols-2 gap-3 border-t border-border pt-5">
-            <Button type="button" className="w-full" disabled={!isReportWindow(draftWindow)} onClick={applyFilters}>Apply filters</Button>
-            <Button type="button" variant="ghost" className="w-full" onClick={closeFilters}>Cancel</Button>
-          </div>
-        </div>
-      </Drawer>
+
 
       <Drawer open={selectedMember !== null} onClose={() => setSelectedMember(null)}
         title={selectedMember ? `${selectedMember.user.firstName} ${selectedMember.user.lastName} · Completed charts` : "Completed charts"}

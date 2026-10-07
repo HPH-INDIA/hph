@@ -3,14 +3,11 @@ import { useId, useRef, useState } from "react";
 import { getErrorMessage } from "@/api/apiError";
 import { useGetManualTeamRangeQuery } from "@/api/reportsApi";
 import type { ManualTeamRangeEntry, ManualTeamRangeGroup } from "@/api/types";
-import { Button } from "@/components/ui/Button";
-import { Drawer } from "@/components/ui/Drawer";
 import { ManualRecordStatusIndicator } from "@/components/ui/ManualRecordStatusIndicator";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { useAuth } from "@/features/auth/useAuth";
 
-import { ManualReportFilters, type PeriodMode } from "./ManualReportFilters";
-import { formatManualMeetings, isReportWindow, manualTeamProduction, reportToday, sumManualHours, sumManualProduction, type ManualReportWindow } from "./manualReportSummary";
+import { formatManualMeetings, manualTeamProduction, sumManualHours, sumManualProduction, type ManualReportWindow } from "./manualReportSummary";
 
 const number = (value: number) => value.toLocaleString();
 const teamKey = (team: ManualTeamRangeGroup) => team.lead ? `lead-${team.lead.id}` : "unassigned";
@@ -110,12 +107,8 @@ export function PeriodRecordsTable({ entries, caption, multipleDays }: { entries
   );
 }
 
-export function ManagerManualReport({ filtersOpen, onCloseFilters }: { filtersOpen: boolean; onCloseFilters: () => void }) {
+export function ManagerManualReport({ window }: { window: ManualReportWindow }) {
   const { user } = useAuth();
-  const [window, setWindow] = useState<ManualReportWindow>(() => ({ fromDate: reportToday(), toDate: reportToday() }));
-  const [appliedMode, setAppliedMode] = useState<PeriodMode>("day");
-  const [draftWindow, setDraftWindow] = useState(window);
-  const [draftMode, setDraftMode] = useState<PeriodMode>(appliedMode);
   const [selectedTeamKey, setSelectedTeamKey] = useState<string | null>(null);
   const tabsId = useId();
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -129,30 +122,10 @@ export function ManagerManualReport({ filtersOpen, onCloseFilters }: { filtersOp
   const period = windowLabel(window);
   const multipleDays = window.fromDate !== window.toDate;
   const activeName = activeTeam?.lead ? `${userName(activeTeam.lead)}’s team` : "Unassigned coders";
-  const closeFilters = () => {
-    setDraftWindow(window);
-    setDraftMode(appliedMode);
-    onCloseFilters();
-  };
-  const applyFilters = () => {
-    if (!isReportWindow(draftWindow)) return;
-    setWindow(draftWindow);
-    setAppliedMode(draftMode);
-    onCloseFilters();
-  };
 
   return (
     <section className="flex min-w-0 flex-col gap-5 rounded-lg border border-border bg-surface p-4">
-      <Drawer open={filtersOpen} onClose={closeFilters} title="Manual report filters"
-        description="Choose a day, month, or custom date range." widthClass="max-w-md">
-        <div className="flex flex-col gap-6">
-          <ManualReportFilters mode={draftMode} value={draftWindow} onModeChange={setDraftMode} onChange={setDraftWindow} />
-          <div className="grid grid-cols-2 gap-3 border-t border-border pt-5">
-            <Button type="button" className="w-full" disabled={!isReportWindow(draftWindow)} onClick={applyFilters}>Apply filters</Button>
-            <Button type="button" variant="ghost" className="w-full" onClick={closeFilters}>Cancel</Button>
-          </div>
-        </div>
-      </Drawer>
+
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] lg:items-start">
         <div>
           <h3 className="font-semibold text-content-primary">All teams · {period}</h3>

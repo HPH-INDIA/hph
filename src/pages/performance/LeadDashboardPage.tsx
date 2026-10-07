@@ -11,6 +11,7 @@ import { useAuth } from "@/features/auth/useAuth";
 import { DailyPerformance } from "./DailyPerformance";
 import { PerformanceSummary } from "./PerformanceSummary";
 import { TeamOverview } from "./TeamOverview";
+import { LeadCoderPerformance } from "./LeadCoderPerformance";
 import { PeriodGoalCard } from "./PeriodGoalCard";
 import { ReportingPeriodFields } from "./ReportingPeriodFields";
 import { dateRangeLabel, defaultLeadFilters, leadDashboardQuery, leadFilterError, leadPeriodLabel, loadLeadFilters, localDayValue, saveLeadFilters, type LeadFilters } from "./leadFilters";
@@ -56,7 +57,6 @@ export function LeadDashboardView({ name, today, filters, onFiltersChange, data,
   const filterCount = Number(filters.dateMode !== "month" || filters.month !== today.slice(0, 7)) + Number(filters.coderId !== "ALL");
   const draftError = leadFilterError(draft, today);
   const dailyPeriod = data ? dateRangeLabel(data.from, data.to) : periodLabel;
-  const periodKey = data ? `${data.from}-${data.to}-${data.selectedCoderId ?? "all"}` : periodLabel;
 
   return <div className="mx-auto flex min-w-0 max-w-screen-2xl flex-col gap-6 text-content-primary">
     <header className="flex flex-wrap items-end justify-between gap-4">
@@ -94,7 +94,7 @@ export function LeadDashboardView({ name, today, filters, onFiltersChange, data,
           <span className="rounded-full bg-brand-100 px-3 py-1.5 text-xs font-medium text-brand-800">Personal</span>
         </div>
         <PeriodGoalCard goal={data.qa.goal} monthly={filters.dateMode === "month"} label="Your goal" />
-        <PerformanceSummary summary={data.qa.efficiency} label="QA performance summary" note="Your own charts in this period" />
+        <PerformanceSummary summary={data.qa.efficiency} label="QA performance summary" />
         <details key={`qa-${data.from}-${data.to}`} className="group rounded-lg border border-border bg-surface">
           <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg px-5 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 [&::-webkit-details-marker]:hidden">QA daily records <span aria-hidden="true" className="text-lg group-open:rotate-45">+</span></summary>
           <DailySection section={data.qa} title="QA daily performance" periodLabel={dailyPeriod} exportName={`qa-performance-${data.from}-to-${data.to}`} />
@@ -110,7 +110,7 @@ export function LeadDashboardView({ name, today, filters, onFiltersChange, data,
           <PeriodGoalCard goal={data.coders.goal} monthly={filters.dateMode === "month"} label={filters.coderId === "ALL" ? "Combined coder goal" : `${coderName} · goal`} />
           <TeamOverview summary={data.coders.efficiency} people={data.coders.goal.userCount} scope={filters.coderId === "ALL" ? "Coders under you · QA excluded" : `${coderName} · QA excluded`} />
           <p className="px-1 text-xs leading-relaxed text-content-secondary">Chart counts and adjusted daily targets are added across coders. CPD and efficiency use combined hours and targets.</p>
-          <DailySection key={periodKey} section={data.coders} title={filters.coderId === "ALL" ? "Combined coder daily performance" : `${coderName} · daily performance`} periodLabel={dailyPeriod} exportName={`coder-performance-${filters.coderId}-${data.from}-to-${data.to}`} />
+          <LeadCoderPerformance data={data} onPick={(coderId) => onFiltersChange({ ...filters, coderId })} />
         </>}
       </section>
       <details className="rounded-lg border border-border bg-surface px-5 py-4 text-xs leading-relaxed text-content-secondary">

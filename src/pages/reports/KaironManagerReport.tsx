@@ -11,8 +11,7 @@ import { useAuth } from "@/features/auth/useAuth";
 import { KaironUploadFormPage } from "@/pages/kairon/KaironUploadFormPage";
 
 import { KaironProductionCards, KaironTeamTable, type KaironTeamMember } from "./KaironRoleReports";
-import { ManualReportFilters, type PeriodMode } from "./ManualReportFilters";
-import { isReportWindow, reportToday, type ManualReportWindow } from "./manualReportSummary";
+import { type ManualReportWindow } from "./manualReportSummary";
 
 const number = (value: number) => value.toLocaleString();
 const teamKey = (team: KaironManagerTeamRange["teams"][number]) => team.lead ? `lead-${team.lead.id}` : "unassigned";
@@ -40,13 +39,9 @@ function sumSummaries(summaries: KaironChartSummary[]): KaironChartSummary {
   }), { pvp: 0, foundation: 0, onHold: 0, total: 0 });
 }
 
-export function KaironManagerReport() {
+export function KaironManagerReport({ window }: { window: ManualReportWindow }) {
   const { user, hasFeature } = useAuth();
   const canWrite = hasFeature("reports", "write");
-  const [window, setWindow] = useState<ManualReportWindow>(() => ({ fromDate: reportToday(), toDate: reportToday() }));
-  const [draftWindow, setDraftWindow] = useState(window);
-  const [draftMode, setDraftMode] = useState<PeriodMode>("day");
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [selectedTeamKey, setSelectedTeamKey] = useState<string | null>(null);
   const [selectedMember, setSelectedMember] = useState<KaironTeamMember | null>(null);
@@ -68,17 +63,6 @@ export function KaironManagerReport() {
   const period = windowLabel(window);
   const dayView = window.fromDate === window.toDate;
 
-  const closeFilters = () => {
-    setDraftWindow(window);
-    setFiltersOpen(false);
-  };
-  const applyFilters = () => {
-    if (!isReportWindow(draftWindow)) return;
-    setWindow(draftWindow);
-    setSelectedMember(null);
-    setRecordPage(1);
-    setFiltersOpen(false);
-  };
   const openMember = (member: KaironTeamMember) => {
     setSelectedMember(member);
     setRecordPage(1);
@@ -91,21 +75,11 @@ export function KaironManagerReport() {
           <p className="text-sm text-content-muted">View completed charts by lead and team.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" aria-haspopup="dialog" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(true)}>Filters</Button>
           {canWrite && <Button type="button" variant="secondary" onClick={() => setUploadOpen(true)}>Upload Kairon file</Button>}
         </div>
       </div>
 
-      <Drawer open={filtersOpen} onClose={closeFilters} title="Kairon report filters"
-        description="Choose a day, month, or custom date range." widthClass="max-w-md">
-        <div className="flex flex-col gap-6">
-          <ManualReportFilters mode={draftMode} value={draftWindow} onModeChange={setDraftMode} onChange={setDraftWindow} />
-          <div className="grid grid-cols-2 gap-3 border-t border-border pt-5">
-            <Button type="button" className="w-full" disabled={!isReportWindow(draftWindow)} onClick={applyFilters}>Apply filters</Button>
-            <Button type="button" variant="ghost" className="w-full" onClick={closeFilters}>Cancel</Button>
-          </div>
-        </div>
-      </Drawer>
+
       <Drawer open={uploadOpen && canWrite} onClose={() => setUploadOpen(false)} title="Upload Kairon file"
         description="Upload a completed CSV batch for one reporting date." widthClass="max-w-2xl">
         <KaironUploadFormPage embedded onCancel={() => setUploadOpen(false)} onStarted={() => setUploadOpen(false)} />

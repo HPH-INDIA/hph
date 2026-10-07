@@ -302,11 +302,8 @@ export interface SetPasswordPayload {
   new_password_confirm: string;
 }
 
-// Projects are fixed seed data, same in spirit as RoleType, but Phase 1 never
-// grew a GET /projects endpoint (§0 of PHASE2_FRONTEND_FOUNDATION.md only
-// added whoami/role-types/session-delete) — so unlike RoleType this list
-// isn't fetched, it's hardcoded to match backend/migrations/versions/
-// b651d55f60e9_seed_projects.py.
+// Legacy Kairon reporting uses these seeded project identities.
+// User assignment and project management load current projects through projectsApi.
 export const PROJECTS: ReadonlyArray<{ id: number; name: string }> = [
   { id: 1, name: "RCM" },
   { id: 2, name: "CODING" },

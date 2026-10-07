@@ -1,8 +1,11 @@
+import { SortableHeader } from "@/components/ui/SortableHeader";
+import { sortTableRows, type TableSort } from "@/components/ui/tableSort";
+import { coderColumns } from "./performanceColumns";
 import { useId, useRef, useState } from "react";
 
 import { getErrorMessage } from "@/api/apiError";
 import { useGetManagerDashboardQuery } from "@/api/reportsApi";
-import type { LeadPerformanceSection, ManagerDashboardSummary, ManagerPerformanceMember } from "@/api/types";
+import type { LeadPerformanceSection, ManagerDashboardQuery, ManagerDashboardSummary, ManagerPerformanceMember } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
@@ -12,6 +15,8 @@ import { DailyPerformance } from "./DailyPerformance";
 import { EfficiencyValue } from "./EfficiencyValue";
 import { PerformanceSummary } from "./PerformanceSummary";
 import { TeamOverview } from "./TeamOverview";
+import { CoderPerformancePanel } from "./CoderPerformancePanel";
+import { ManagerCoderDay } from "./ManagerCoderDay";
 import { PeriodGoalCard } from "./PeriodGoalCard";
 import { ReportingPeriodFields, performanceInputClass } from "./ReportingPeriodFields";
 import { dateRangeLabel, leadPeriodLabel, loadLeadFilters, localDayValue, saveLeadFilters } from "./leadFilters";
@@ -79,7 +84,7 @@ export function ManagerDashboardView({ today, filters, onFiltersChange, data, op
     key={`${role}-${teamId ?? "all"}-${data?.from}-${data?.to}-${filters.coderId}-${filters.cohortId}-${filters.program}`}
     title={title} context={context} section={section} monthly={monthly} role={role}
     members={(data?.members ?? []).filter((member) => member.roleType === role && (teamId === undefined || (teamId === null ? !member.leadId : member.leadId === teamId)))}
-    onPickMember={pickMember} />;
+    onPickMember={pickMember} scope={{ ...managerDashboardQuery(filters, today), ...(teamId != null ? { leadId: teamId } : {}) }} />;
 
   return <div className="mx-auto flex min-w-0 max-w-screen-2xl flex-col gap-5 text-content-primary">
     <header className="flex flex-wrap items-end justify-between gap-4">
@@ -170,30 +175,43 @@ function Select({ label, value, onChange, children }: { label: string; value: st
   return <label className="flex flex-col gap-1.5 text-xs font-medium text-content-secondary">{label}<select className={performanceInputClass} value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>;
 }
 
-function ManagerSection({ title, context, section, monthly, members, role, onPickMember }: {
+function ManagerSection({ title, context, section, monthly, members, role, onPickMember, scope }: {
   title: string; context: string; section: LeadPerformanceSection; monthly: boolean;
   members: ManagerPerformanceMember[]; role: "lead" | "employee"; onPickMember: (member: ManagerPerformanceMember) => void;
+  scope: ManagerDashboardQuery;
 }) {
   const id = useId();
+  const pickCoder = (userId: number) => {
+    const member = members.find((item) => item.userId === userId);
+    if (member) onPickMember(member);
+  };
   return <section aria-labelledby={id} className="flex min-w-0 flex-col gap-3">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 id={id} className="text-base font-semibold">{title}</h3><p className="mt-1 text-xs text-content-secondary">{context}</p></div><span className={`rounded-full px-3 py-1 text-xs font-medium ${role === "lead" ? "bg-brand-100 text-brand-800" : "bg-surface-muted text-content-secondary"}`}>{section.goal.userCount} {role === "lead" ? (section.goal.userCount === 1 ? "QA lead" : "QA leads") : (section.goal.userCount === 1 ? "coder" : "coders")}</span></div>
     {section.goal.userCount === 0 ? <EmptyState title={role === "lead" ? "No QA in this selection" : "No coders in this selection"} description="Adjust the filters to include more people." /> : <>
       <PeriodGoalCard goal={section.goal} monthly={monthly} label={role === "lead" ? "QA goal" : "Coder goal"} />
-      <PerformanceSummary summary={section.efficiency} label={`${title} performance summary`} note={role === "lead" ? "Lead records in this period" : "Coder records in this period"} />
+      <PerformanceSummary summary={section.efficiency} label={`${title} performance summary`} />
+      {role === "employee" ? <CoderPerformancePanel key={JSON.stringify(scope)} members={members} rows={section.efficiency.daily}
+        from={section.efficiency.from} to={section.efficiency.to} periodLabel={dateRangeLabel(section.efficiency.from, section.efficiency.to)} onPick={pickCoder}
+        exportName={`manager-coders-${section.efficiency.from}-to-${section.efficiency.to}`}
+        renderDayDetails={(date) => <ManagerCoderDay date={date} scope={scope} members={members} onPick={pickCoder} />} /> : <>
       <MemberTable members={members} role={role} onPick={onPickMember} />
       <details className="group min-w-0 rounded-lg border border-border bg-surface">
         <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg px-5 py-3 text-sm font-medium focus-visible:ring-2 focus-visible:ring-brand-500 [&::-webkit-details-marker]:hidden">{role === "lead" ? "QA" : "Coder"} daily performance<span className="text-lg group-open:rotate-45" aria-hidden="true">+</span></summary>
         <DailyPerformance rows={section.efficiency.daily} month={section.efficiency.from.slice(0, 7)} periodLabel={dateRangeLabel(section.efficiency.from, section.efficiency.to)} title={`${title} · daily totals`} description="Daily chart counts, saved adjusted targets, CPD, and efficiency." exportName={`manager-${role}-${members.length === 1 ? members[0].userId : "combined"}-${section.efficiency.from}-to-${section.efficiency.to}`} showYear />
       </details>
+      </>}
     </>}
   </section>;
 }
 function MemberTable({ members, role, onPick }: { members: ManagerPerformanceMember[]; role: "lead" | "employee"; onPick: (member: ManagerPerformanceMember) => void }) {
+  const [sort, setSort] = useState<TableSort>({ key: "name", direction: "asc" });
+  const columns = coderColumns.map((column) => column.key === "name" ? { ...column, label: role === "lead" ? "Lead" : "Coder" } : column);
+  const sortedMembers = sortTableRows(members, columns, sort);
   return <div className="min-w-0 overflow-x-auto rounded-lg border border-border bg-surface" tabIndex={0} role="region" aria-label={role === "lead" ? "Lead performance table" : "Coder performance table"}>
     <table className="w-full min-w-[980px] text-left text-sm">
       <caption className="sr-only">{role === "lead" ? "QA lead" : "Coder"} results for the selected period. Select a name to filter the dashboard.</caption>
-      <thead className="bg-surface-muted text-xs text-content-secondary"><tr>{[role === "lead" ? "Lead" : "Coder", "Manual charts", "Kairon charts", "Manual CPD", "Kairon CPD", "Target CPD", "Manual efficiency", "Kairon efficiency"].map((label, index) => <th key={label} scope="col" className={`px-4 py-3 font-medium ${index ? "text-right" : ""}`}>{label}</th>)}</tr></thead>
-      <tbody className="divide-y divide-border">{members.map((member) => <tr key={member.userId} className="hover:bg-brand-50/50">
+      <thead className="bg-surface-muted text-xs text-content-secondary"><tr>{columns.map((column, index) => <SortableHeader key={column.key} column={column} sort={sort} onSort={setSort} align={index ? "right" : "left"} className="px-4 py-3 font-medium" />)}</tr></thead>
+      <tbody className="divide-y divide-border">{sortedMembers.map((member) => <tr key={member.userId} className="hover:bg-brand-50/50">
         <th scope="row" className="px-4 py-3 font-normal"><button onClick={() => onPick(member)} className="rounded text-left font-medium text-brand-700 underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-brand-500">{member.name}</button><div className="mt-1 text-xs text-content-secondary">{member.empId}{member.isActive ? "" : " · Inactive"}</div></th>
         {[member.efficiency.manualCharts, member.efficiency.kaironCharts, member.efficiency.manualCpd, member.efficiency.kaironCpd, member.efficiency.targetCpd].map((value, index) => <td key={index} className="px-4 py-3 text-right tabular-nums">{numberLabel(value, index < 2 ? 0 : 1)}</td>)}
         <td className="px-4 py-3 text-right"><EfficiencyValue value={member.efficiency.manualEfficiencyPercent} /></td><td className="px-4 py-3 text-right"><EfficiencyValue value={member.efficiency.kaironEfficiencyPercent} /></td>

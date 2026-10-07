@@ -6,6 +6,7 @@ import { SetPasswordPage } from "@/pages/SetPasswordPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { AccountSessionsPage } from "@/pages/account/AccountSessionsPage";
+import { ProjectsPage } from "@/pages/admin/projects/ProjectsPage";
 import { UsersListPage } from "@/pages/admin/users/UsersListPage";
 import { UserFormPage } from "@/pages/admin/users/UserFormPage";
 import { RolesListPage } from "@/pages/admin/roles/RolesListPage";
@@ -49,6 +50,7 @@ export function AppRoutes() {
                 <HomePage />
               }
             />
+            <Route path="/admin/projects" element={<RequireFeature codename="project_management"><ProjectsPage /></RequireFeature>} />
             <Route path="/account" element={<AccountSessionsPage />} />
             <Route path="/input-data" element={<Navigate to="/reports" replace />} />
 

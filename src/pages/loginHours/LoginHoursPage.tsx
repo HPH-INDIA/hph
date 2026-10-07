@@ -1,10 +1,13 @@
+import { parseAttendance } from "./parseAttendance";
+import { useDispatch } from "react-redux";
+import { apiSlice } from "@/api/apiSlice";
 import { Fragment, useState } from "react";
 
 import { getErrorMessage } from "@/api/apiError";
 import {
   useListLoginHourRecordsQuery,
   useListLoginHoursUploadsQuery,
-  useUploadLoginHoursMutation,
+  useUploadLoginHoursChunkMutation,
 } from "@/api/loginHoursApi";
 import type { LoginHoursUploadBatch } from "@/api/types";
 import { Button } from "@/components/ui/Button";
@@ -21,15 +24,6 @@ interface LoginHoursFilters {
   cohortId: number | null;
   fromDate: string;
   toDate: string;
-}
-
-async function fileToBase64(file: File) {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  }
-  return btoa(binary);
 }
 
 function formatMinutes(minutes: number) {
@@ -90,7 +84,12 @@ export function LoginHoursPage() {
     fromDate: "",
     toDate: "",
   });
-  const [upload, uploadState] = useUploadLoginHoursMutation();
+  const [upload] = useUploadLoginHoursChunkMutation();
+  const dispatch = useDispatch();
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState("");
+  const [uploadError, setUploadError] = useState("");
+  const [pendingUpload, setPendingUpload] = useState<{ uploadId: string; sourceFilename: string; sourceFormat: string; headers: string[]; rows: unknown[][]; offset: number; batchId?: number } | null>(null);
   const records = useListLoginHourRecordsQuery({
     page,
     pageSize: 25,
@@ -141,13 +140,35 @@ export function LoginHoursPage() {
   };
 
   const handleUpload = async () => {
-    if (!file) return;
-    const fileBase64 = await fileToBase64(file);
-    const result = await upload({ sourceFilename: file.name, fileBase64 });
-    if (!("error" in result)) {
-      setLastResult(result.data);
+    if ((!file && !pendingUpload) || uploading) return;
+    setUploading(true);
+    setUploadError("");
+    setLastResult(null);
+    let job = pendingUpload;
+    try {
+      if (!job) {
+        setProgress("Reading attendance workbook…");
+        const parsed = await parseAttendance(file!);
+        job = { ...parsed, sourceFilename: file!.name, uploadId: crypto.randomUUID(), offset: 0 };
+        setPendingUpload(job);
+      }
+      while (job.offset < job.rows.length) {
+        setProgress(`Saving day records: ${job.offset} of ${job.rows.length} processed`);
+        const result = await upload({ sourceFilename: job.sourceFilename, sourceFormat: job.sourceFormat, uploadId: job.uploadId,
+          batchId: job.batchId, chunkIndex: job.offset / 200, headers: job.headers, rows: job.rows.slice(job.offset, job.offset + 200) }).unwrap();
+        job = { ...job, batchId: result.id, offset: Math.min(job.offset + 200, job.rows.length) };
+        setPendingUpload(job);
+        if (job.offset === job.rows.length) setLastResult(result);
+      }
+      setProgress(`Completed: ${job.rows.length} day records processed`);
+      setPendingUpload(null);
       setFile(null);
       setPage(1);
+    } catch (error) {
+      setUploadError(getErrorMessage(error));
+    } finally {
+      setUploading(false);
+      dispatch(apiSlice.util.invalidateTags(["LoginHours", "CodingDashboard"]));
     }
   };
 
@@ -175,17 +196,20 @@ export function LoginHoursPage() {
                 className={inputClasses}
                 type="file"
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                disabled={uploading}
+                onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPendingUpload(null); setProgress(""); setUploadError(""); setLastResult(null); }}
               />
             </label>
-            <Button disabled={!file} isLoading={uploadState.isLoading} onClick={() => void handleUpload()}>
-              Upload login hours
+            <Button disabled={!file && !pendingUpload} isLoading={uploading} onClick={() => void handleUpload()}>
+              {pendingUpload && !uploading ? "Retry remaining records" : "Upload login hours"}
             </Button>
           </div>
           <p className="mt-2 text-xs text-content-muted">
             Total Inside is stored as the primary login-hours measure. First in, last out, outside time, total span, status, and anomalies are retained for review.
           </p>
 
+          {progress && <p role="status" className="mt-3 text-sm text-content-secondary">{progress}</p>}
+          {uploadError && <p role="alert" className="mt-3 text-sm text-danger">{uploadError} Saved chunks are retained. Retry to continue.</p>}
           {lastResult && (
             <div className="mt-4 rounded-md border border-border bg-surface-muted p-4 text-sm">
               <p className="font-medium text-content-primary">Imported {lastResult.matchedCount} matched row(s)</p>

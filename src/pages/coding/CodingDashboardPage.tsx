@@ -1,3 +1,5 @@
+import { SortableHeader } from "@/components/ui/SortableHeader";
+import { numericSortValue, sortTableRows, type SortColumn, type TableSort } from "@/components/ui/tableSort";
 import { useMemo, useState } from "react";
 
 import { getErrorMessage } from "@/api/apiError";
@@ -137,7 +139,17 @@ function ListViewIcon() {
   );
 }
 
+const efficiencyColumns: SortColumn<CodingDashboardCard>[] = [
+  { key: "name", label: "Coder", value: (card) => `${card.firstName} ${card.lastName}` },
+  ...([
+    ["manualCharts", "Manual charts"], ["kaironCharts", "Kairon charts"], ["adjustedTarget", "Adjusted target"],
+    ["productiveMinutes", "Productive hours"], ["calculatedDays", "Days"], ["manualEfficiencyPercent", "Manual efficiency"],
+    ["kaironEfficiencyPercent", "Kairon efficiency"], ["manualCpd", "Manual CPD"], ["kaironCpd", "Kairon CPD"], ["targetCpd", "Target CPD"],
+  ] as const).map(([key, label]) => ({ key, label, value: (card: CodingDashboardCard) => numericSortValue(card.efficiency[key]), defaultDirection: "desc" as const })),
+];
+
 export function CodingDashboardPage() {
+  const [tableSort, setTableSort] = useState<TableSort>({ key: "name", direction: "asc" });
   const { user } = useAuth();
   const today = localDateValue();
   const currentMonth = today.slice(0, 7);
@@ -231,6 +243,7 @@ export function CodingDashboardPage() {
       `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`),
     );
   }, [coderMetadata, dashboard.data, tableCohortId, tableLeadId, tableStage, tableUserIds]);
+  const sortedCoderCards = sortTableRows(filteredCoderCards, efficiencyColumns, tableSort);
   const tableFilterCount =
     Number(tableUserIds.length > 0) +
     Number(tableLeadId !== "ALL") +
@@ -690,21 +703,11 @@ export function CodingDashboardPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-surface-muted text-xs uppercase tracking-wide text-content-muted">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Coder</th>
-                  <th className="px-4 py-3 font-medium">Manual charts</th>
-                  <th className="px-4 py-3 font-medium">Kairon charts</th>
-                  <th className="px-4 py-3 font-medium">Adjusted target</th>
-                  <th className="px-4 py-3 font-medium">Productive hours</th>
-                  <th className="px-4 py-3 font-medium">Days</th>
-                  <th className="px-4 py-3 font-medium">Manual efficiency</th>
-                  <th className="px-4 py-3 font-medium">Kairon efficiency</th>
-                  <th className="px-4 py-3 font-medium">Manual CPD</th>
-                  <th className="px-4 py-3 font-medium">Kairon CPD</th>
-                  <th className="px-4 py-3 font-medium">Target CPD</th>
+                  {efficiencyColumns.map((column) => <SortableHeader key={column.key} column={column} sort={tableSort} onSort={setTableSort} className="px-4 py-3 font-medium" />)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredCoderCards.map((card) => {
+                {sortedCoderCards.map((card) => {
                   const manualPercent = card.efficiency.manualEfficiencyPercent === null ? null : Number(card.efficiency.manualEfficiencyPercent);
                   const kaironPercent = card.efficiency.kaironEfficiencyPercent === null ? null : Number(card.efficiency.kaironEfficiencyPercent);
                   const metadata = coderMetadata.get(card.userId);

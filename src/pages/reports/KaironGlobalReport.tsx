@@ -1,3 +1,4 @@
+import type { ManualReportWindow } from "./manualReportSummary";
 import { useDeferredValue, useEffect, useState } from "react";
 
 import {
@@ -14,7 +15,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews
 import { useAuth } from "@/features/auth/useAuth";
 import { KaironUploadFormPage } from "@/pages/kairon/KaironUploadFormPage";
 
-export function KaironGlobalReport() {
+export function KaironGlobalReport({ window }: { window: ManualReportWindow }) {
   const { hasFeature, hasRoleType } = useAuth();
   const canUpload = hasFeature("reports", "write") && hasRoleType("manager");
   const isIndividualContributor = hasRoleType("lead") || hasRoleType("employee");
@@ -31,7 +32,7 @@ export function KaironGlobalReport() {
     isLoading,
     isError,
     refetch,
-  } = useGetKaironCompletedCountsQuery({ page, pageSize: 25 });
+  } = useGetKaironCompletedCountsQuery({ ...window, page, pageSize: 25 });
   const completedCounts = pageData?.items;
   const {
     data: userPageData,

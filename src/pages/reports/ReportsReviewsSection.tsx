@@ -12,14 +12,12 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews
 import { useAuth } from "@/features/auth/useAuth";
 import { useToast } from "@/features/ui/useToast";
 
-import { ManualReportFilters, type PeriodMode } from "./ManualReportFilters";
 import { PeriodRecordsTable, ProductionCards } from "./ManagerManualReport";
-import { formatManualMeetings, isReportWindow, reportToday, type ManualReportWindow } from "./manualReportSummary";
+import { formatManualMeetings, type ManualReportWindow } from "./manualReportSummary";
 
 interface ReportsReviewsSectionProps {
   onEditOwnRecord?: (record: ManualDailyRecord) => void;
-  filtersOpen: boolean;
-  onCloseFilters: () => void;
+  window: ManualReportWindow;
 }
 
 interface RejectDraft {
@@ -107,11 +105,7 @@ function TeamRecordsTable({
   );
 }
 
-export function ReportsReviewsSection({ onEditOwnRecord, filtersOpen, onCloseFilters }: ReportsReviewsSectionProps) {
-  const [window, setWindow] = useState<ManualReportWindow>(() => ({ fromDate: reportToday(), toDate: reportToday() }));
-  const [appliedMode, setAppliedMode] = useState<PeriodMode>("day");
-  const [draftWindow, setDraftWindow] = useState(window);
-  const [draftMode, setDraftMode] = useState<PeriodMode>(appliedMode);
+export function ReportsReviewsSection({ onEditOwnRecord, window }: ReportsReviewsSectionProps) {
   const [rejectDraft, setRejectDraft] = useState<RejectDraft | null>(null);
   const { user, hasRoleType, hasFeature } = useAuth();
   const canReview = hasRoleType("lead") && hasFeature("reports", "write");
@@ -140,18 +134,6 @@ export function ReportsReviewsSection({ onEditOwnRecord, filtersOpen, onCloseFil
       : [],
   );
 
-  const closeFilters = () => {
-    setDraftWindow(window);
-    setDraftMode(appliedMode);
-    onCloseFilters();
-  };
-  const applyFilters = () => {
-    if (isMutating || !isReportWindow(draftWindow)) return;
-    setRejectDraft(null);
-    setWindow(draftWindow);
-    setAppliedMode(draftMode);
-    onCloseFilters();
-  };
   const approveRecord = async (record: ManualDailyRecord) => {
     if (actionsDisabled || !pendingIds.has(record.id)) return;
     await approveOne(record.id);
@@ -191,16 +173,7 @@ export function ReportsReviewsSection({ onEditOwnRecord, filtersOpen, onCloseFil
 
   return (
     <section className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-4">
-      <Drawer open={filtersOpen} onClose={closeFilters} title="Manual report filters"
-        description="Choose a day, month, or custom date range." widthClass="max-w-md">
-        <div className="flex flex-col gap-6">
-          <ManualReportFilters mode={draftMode} value={draftWindow} onModeChange={setDraftMode} onChange={setDraftWindow} />
-          <div className="grid grid-cols-2 gap-3 border-t border-border pt-5">
-            <Button type="button" className="w-full" disabled={isMutating || !isReportWindow(draftWindow)} onClick={applyFilters}>Apply filters</Button>
-            <Button type="button" variant="ghost" className="w-full" onClick={closeFilters}>Cancel</Button>
-          </div>
-        </div>
-      </Drawer>
+
       {isError && <ErrorState message={`Couldn't load team records. ${getErrorMessage(error)}`} onRetry={refetch} />}
       {!isError && !report && <LoadingState label="Loading team records…" />}
       {!isError && report && !team && <EmptyState title="No team records for this period" />}

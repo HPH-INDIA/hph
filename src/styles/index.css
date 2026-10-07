@@ -10,9 +10,15 @@ body,
   height: 100%;
 }
 
+html {
+  overscroll-behavior: none;
+}
+
 body {
   @apply bg-surface-muted text-content-primary font-sans antialiased;
   margin: 0;
+  overscroll-behavior: none;
+  background-repeat: no-repeat;
   background-image:
     radial-gradient(circle at 100% 0%, rgb(243 230 250 / 0.72), transparent 28rem),
     linear-gradient(180deg, #ffffff 0, var(--color-surface-muted) 24rem);

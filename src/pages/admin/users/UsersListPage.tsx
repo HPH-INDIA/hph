@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useDeactivateUserMutation, useListUsersQuery, type UserStatusFilter } from "@/api/usersApi";
-import { PROJECTS, type AdminUser } from "@/api/types";
+import { type AdminUser } from "@/api/types";
+import { useProjectOptionsQuery } from "@/api/projectsApi";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -15,7 +16,7 @@ const TABS: { key: UserStatusFilter; label: string }[] = [
   { key: "inactive", label: "Inactive" },
 ];
 
-const projectName = (projectId: number | null) => PROJECTS.find((p) => p.id === projectId)?.name ?? "—";
+
 
 function localDateValue(date = new Date()) {
   const year = date.getFullYear();
@@ -25,8 +26,11 @@ function localDateValue(date = new Date()) {
 }
 
 export function UsersListPage() {
+  const { data: projects = [] } = useProjectOptionsQuery();
+  const projectName = (id: number | null) => projects.find((p) => p.id === id)?.name ?? "—";
   const [statusTab, setStatusTab] = useState<UserStatusFilter>("all");
-  const { data: users, isLoading, isError, refetch } = useListUsersQuery(statusTab);
+  const { data: fetchedUsers, isLoading, isError, refetch } = useListUsersQuery(statusTab);
+  const users = fetchedUsers?.filter((user) => user.role.roleType !== "super_admin");
   const { canManageRoleType, canWriteFeature } = useAuth();
   const canWriteUsers = canWriteFeature("user_management");
 

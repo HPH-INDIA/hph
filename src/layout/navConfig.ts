@@ -18,6 +18,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Reports", to: "/reports", feature: "reports", icon: "reports" },
   { label: "Login Hours", to: "/login-hours", feature: "login_hours", icon: "clock" },
   { label: "Team", to: "/team", feature: "user_management", icon: "team", roleTypes: ["manager"] },
+  { label: "Projects", to: "/admin/projects", feature: "project_management", icon: "team" },
   { label: "Users", to: "/admin/users", feature: "user_management", icon: "users" },
   { label: "Roles & Features", to: "/admin/roles", feature: "role_management", icon: "roles" },
 ];

@@ -32,7 +32,7 @@ import { parseManualBulkFile, type ManualBulkFileResult } from "../manual/manual
 
 import { ReportsReviewsSection } from "./ReportsReviewsSection";
 import { ManagerManualReport } from "./ManagerManualReport";
-import { formatManualMeetings, isReportDate } from "./manualReportSummary";
+import { formatManualMeetings, isReportDate, type ManualReportWindow } from "./manualReportSummary";
 
 const MANUAL_RECORDS_PAGE_SIZE = 10;
 
@@ -343,13 +343,12 @@ function ManualBulkUploadForm({ onStarted, onCancel }: { onStarted: () => void; 
   );
 }
 
-export function ReportsManualTab() {
+export function ReportsManualTab({ window }: { window: ManualReportWindow }) {
   const [page, setPage] = useState(1);
   const [isEntryFormOpen, setIsEntryFormOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ManualDailyRecord | null>(null);
   const [entryDate, setEntryDate] = useState(todayDate);
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
-  const [isTeamFiltersOpen, setIsTeamFiltersOpen] = useState(false);
   const { hasFeature, hasRoleType } = useAuth();
   const isManager = hasRoleType("manager");
   const isLead = hasRoleType("lead");
@@ -359,7 +358,7 @@ export function ReportsManualTab() {
   const canViewTeam = hasFeature("reports") && (isManager || isLead);
   const showOwnRecords = !isManager && !isLead;
   const { data: pageData, isLoading, isError, refetch } = useGetMyManualRecordsQuery(
-    { page, pageSize: MANUAL_RECORDS_PAGE_SIZE },
+    { ...window, page, pageSize: MANUAL_RECORDS_PAGE_SIZE },
     { refetchOnMountOrArgChange: true, skip: !showOwnRecords },
   );
   const records = pageData?.items;
@@ -390,7 +389,6 @@ export function ReportsManualTab() {
         </div>
         {(canSubmit || canBulkUpload || canViewTeam) && (
           <div className="flex flex-wrap gap-2">
-            {canViewTeam && <Button type="button" variant="secondary" aria-haspopup="dialog" aria-expanded={isTeamFiltersOpen} onClick={() => setIsTeamFiltersOpen(true)}>Filters</Button>}
             {canBulkUpload && <Button type="button" variant="secondary" onClick={() => setIsBulkUploadOpen(true)}>Bulk upload</Button>}
             {canSubmit && (
               <Button
@@ -441,11 +439,10 @@ export function ReportsManualTab() {
         />
       </Drawer>
 
-      {canViewTeam && isManager && <ManagerManualReport filtersOpen={isTeamFiltersOpen} onCloseFilters={() => setIsTeamFiltersOpen(false)} />}
+      {canViewTeam && isManager && <ManagerManualReport window={window} />}
       {canViewTeam && isLead && (
         <ReportsReviewsSection
-          filtersOpen={isTeamFiltersOpen}
-          onCloseFilters={() => setIsTeamFiltersOpen(false)}
+          window={window}
           onEditOwnRecord={isLead && canSubmit ? openEditEntry : undefined}
         />
       )}

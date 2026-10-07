@@ -8,6 +8,7 @@ export type TagType =
   | "Users"
   | "Roles"
   | "Features"
+  | "Projects"
   | "RoleTypes"
   | "KaironChartRecords"
   | "KaironUploadBatches"
@@ -28,6 +29,7 @@ export const apiSlice = createApi({
     "Users",
     "Roles",
     "Features",
+    "Projects",
     "RoleTypes",
     "KaironChartRecords",
     "KaironUploadBatches",

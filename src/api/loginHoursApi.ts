@@ -25,6 +25,9 @@ export const loginHoursApi = apiSlice.injectEndpoints({
         await notifyOnSettle(dispatch, queryFulfilled);
       },
     }),
+    uploadLoginHoursChunk: builder.mutation<LoginHoursUploadBatch, { sourceFilename: string; sourceFormat: string; uploadId: string; batchId?: number; chunkIndex: number; headers: string[]; rows: unknown[][] }>({
+      query: (body) => ({ url: "/login-hours/uploads/records", method: "POST", body }),
+    }),
     listLoginHourRecords: builder.query<LoginHourRecordPage, LoginHourRecordQuery>({
       query: (params) => ({ url: `/login-hours/records${buildQueryString(params)}` }),
       providesTags: [{ type: "LoginHours", id: "RECORDS" }],
@@ -35,5 +38,6 @@ export const loginHoursApi = apiSlice.injectEndpoints({
 export const {
   useListLoginHoursUploadsQuery,
   useUploadLoginHoursMutation,
+  useUploadLoginHoursChunkMutation,
   useListLoginHourRecordsQuery,
 } = loginHoursApi;

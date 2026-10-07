@@ -69,7 +69,7 @@ export function AppShell() {
   ));
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-transparent lg:flex-row">
+    <div className="fixed inset-0 flex h-dvh min-w-0 flex-col overflow-clip bg-transparent lg:flex-row">
       <div className="shrink-0 bg-hph-blue text-white lg:hidden">
         <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
           <HphLogo />
@@ -83,7 +83,7 @@ export function AppShell() {
         </nav>
       </div>
 
-      <div className="relative z-40 hidden h-screen w-[76px] shrink-0 lg:block">
+      <div className="relative z-40 hidden h-full w-[76px] shrink-0 lg:block">
         <aside
           aria-label="Application sidebar"
           onMouseEnter={() => setIsHovered(true)}
@@ -146,8 +146,8 @@ export function AppShell() {
         </aside>
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-clip">
+        <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
           <div className="animate-[page-enter_240ms_ease-out]"><Outlet /></div>
         </main>
 

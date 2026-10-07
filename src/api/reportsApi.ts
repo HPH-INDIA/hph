@@ -1,3 +1,4 @@
+import { loadLeadCoderPerformance, type LeadCoderPerformanceQuery, type CoderPerformanceMember } from "./coderPerformance";
 import { apiSlice, providesList } from "./apiSlice";
 import { loadManualTeamDay, type ManualTeamDayQuery } from "./manualTeamDay";
 import { loadManualTeamRange, type ManualTeamRangeQuery } from "./manualTeamRange";
@@ -32,6 +33,8 @@ import type {
   SelfKaironChartQuery,
 } from "./types";
 
+type ReportPeriodQuery = PaginationQuery & { fromDate?: string; toDate?: string };
+
 export const reportsApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     // Always "and it's mine" server-side — see SelfKaironChartQuery's note.
@@ -39,7 +42,7 @@ export const reportsApi = apiSlice.injectEndpoints({
       query: (args) => ({ url: `/reports/kairon${buildQueryString({ ...args })}` }),
       providesTags: (result) => providesList("KaironChartRecords", result?.items),
     }),
-    getKaironCompletedCounts: builder.query<PaginatedResult<KaironCompletedDailyCount>, PaginationQuery | void>({
+    getKaironCompletedCounts: builder.query<PaginatedResult<KaironCompletedDailyCount>, ReportPeriodQuery | void>({
       query: (args) => ({ url: `/reports/kairon/completed-counts${buildQueryString({ ...args })}` }),
       providesTags: [{ type: "KaironChartRecords", id: "LIST" }],
     }),
@@ -75,7 +78,7 @@ export const reportsApi = apiSlice.injectEndpoints({
       query: (args) => ({ url: `/reports/kairon/team-records${buildQueryString(args)}` }),
       providesTags: (result) => providesList("KaironChartRecords", result?.items),
     }),
-    getMyManualRecords: builder.query<PaginatedResult<ManualDailyRecord>, PaginationQuery | void>({
+    getMyManualRecords: builder.query<PaginatedResult<ManualDailyRecord>, ReportPeriodQuery | void>({
       query: (args) => ({ url: `/reports/manual${buildQueryString({ ...args })}` }),
       providesTags: (result) => providesList("ManualDailyRecords", result?.items),
     }),
@@ -119,6 +122,10 @@ export const reportsApi = apiSlice.injectEndpoints({
       query: (args) => ({ url: `/dashboards/coding${buildQueryString({ ...args })}` }),
       providesTags: [{ type: "CodingDashboard" }],
     }),
+    getLeadCoderPerformance: builder.query<CoderPerformanceMember[], LeadCoderPerformanceQuery>({
+      queryFn: (args, api, _extraOptions, query) => loadLeadCoderPerformance(args, query, api.signal),
+      providesTags: [{ type: "CodingDashboard" }, { type: "Users", id: "LIST" }, { type: "Team" }],
+    }),
     getLeadDashboard: builder.query<LeadDashboardSummary, LeadDashboardQuery>({
       query: (args) => ({ url: `/dashboards/lead${buildQueryString(args)}` }),
       providesTags: [{ type: "CodingDashboard" }, { type: "Users", id: "LIST" }, { type: "Team" }],
@@ -156,6 +163,7 @@ export const {
   useGetCodingDashboardQuery,
   useGetMyEfficiencyQuery,
   useGetLeadDashboardQuery,
+  useGetLeadCoderPerformanceQuery,
   useGetManagerDashboardQuery,
   useGetMonthlyGoalQuery,
 } = reportsApi;

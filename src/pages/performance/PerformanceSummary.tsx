@@ -3,13 +3,9 @@ import type { EfficiencySummary } from "@/api/types";
 import { EfficiencyValue } from "./EfficiencyValue";
 import { numberLabel } from "./performanceView";
 
-export function PerformanceSummary({ summary, note = "Recorded in this period", label = "Personal performance summary" }: { summary: EfficiencySummary; note?: string; label?: string }) {
+export function PerformanceSummary({ summary, label = "Personal performance summary" }: { summary: EfficiencySummary; label?: string }) {
   return (
-          <section aria-label={label} className="grid gap-3 md:grid-cols-3">
-            <ComparisonCard title="Charts completed" note={note}>
-              <Metric label="Manual" value={numberLabel(summary.manualCharts)} />
-              <Metric label="Kairon" value={numberLabel(summary.kaironCharts)} />
-            </ComparisonCard>
+          <section aria-label={label} className="grid gap-3 md:grid-cols-2">
             <ComparisonCard title="Efficiency" note="100% meets target · capped at 120%">
               <Metric label="Manual" value={<EfficiencyValue value={summary.manualEfficiencyPercent} large />} />
               <Metric label="Kairon" value={<EfficiencyValue value={summary.kaironEfficiencyPercent} large />} />
