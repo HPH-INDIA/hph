@@ -67,4 +67,6 @@ This removes the test containers/network and leaves Supabase data intact. Do not
 
 ## Linux server or different ports
 
+For deployment beside the existing onboarding app, follow the [in-house server commands in the README](README.md#run-alongside-onboarding-on-the-in-house-server). The supplied onboarding Compose file uses host ports `5001` and `5432`; HPH uses `8082` and loopback-only `8083`, with its database and import files on Supabase.
+
 Edit the frontend `.env.test` values. For LAN access set `TEST_BIND_ADDRESS=0.0.0.0` and `TEST_FRONTEND_ORIGIN=http://SERVER_IP:8082`. If changing `TEST_FRONTEND_PORT`, update the origin to match. The API remains bound to loopback; browser requests reach it through Nginx. For HTTPS, set `TEST_SECURE_COOKIES=true` and use the HTTPS origin. Recreate containers after changing environment values.

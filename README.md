@@ -93,6 +93,40 @@ docker compose --env-file .env.test -f compose.test.yaml ps
 
 Open `http://localhost:8082` locally or `http://YOUR_SERVER_IP:8082` on your server. The verification script checks Supabase connectivity, the application encryption key, and the private bucket using reads only. HTTP health checks alone do not verify Supabase.
 
+### Run alongside onboarding on the in-house server
+
+The supplied `onboarding-app/docker-compose.yml` publishes the onboarding app on port `5001` and its PostgreSQL container on `5432`. HPH uses its own Compose project, `hph-test`, and these ports:
+
+| Service | Server address | Access |
+| --- | --- | --- |
+| HPH frontend | `http://YOUR_SERVER_IP:8082` | Office network when `TEST_BIND_ADDRESS=0.0.0.0` |
+| HPH API | `http://127.0.0.1:8083` | Server only; browsers use the frontend's `/api` proxy |
+| HPH database and import files | Hosted Supabase | Outbound connection from the API container |
+
+Complete steps 1–4 above, using the LAN settings in step 2. Check that `8082` and `8083` are available; if another service uses them, change `TEST_FRONTEND_PORT` / `TEST_BACKEND_PORT` and make `TEST_FRONTEND_ORIGIN` match the frontend port. List the server's current Docker port mappings with:
+
+```sh
+docker ps --format 'table {{.Names}}\t{{.Ports}}'
+```
+
+From the `hph` directory on the server, deploy the configured test stack:
+
+```sh
+docker compose --env-file .env.test -f compose.test.yaml config --quiet
+docker compose --env-file .env.test -f compose.test.yaml up --build -d --wait
+docker compose --env-file .env.test -f compose.test.yaml exec backend python scripts/check-test-environment.py
+docker compose --env-file .env.test -f compose.test.yaml ps
+```
+
+With the default ports, check both HTTP services from the server:
+
+```sh
+curl --fail http://127.0.0.1:8082/healthz
+curl --fail http://127.0.0.1:8083/healthz
+```
+
+Open `http://YOUR_SERVER_IP:8082` from another office machine. Permit that frontend port in the server firewall for the intended network. If the server checks pass but another machine cannot open the UI, confirm the frontend bind address, server IP, and firewall rule. The Compose commands above manage only the `hph-test` project. The onboarding app can continue running, and HPH keeps using the Supabase connection in its backend `.env.test`.
+
 ### Logs, updates, and shutdown
 
 View logs (Ctrl+C exits the log viewer without stopping the containers):
