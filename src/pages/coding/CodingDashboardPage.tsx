@@ -656,7 +656,6 @@ export function CodingDashboardPage() {
                             {candidate.firstName} {candidate.lastName}
                             {!isCardActive(candidate) && <Badge tone="neutral">Inactive</Badge>}
                           </span>
-                          <span className="block truncate text-xs text-content-muted">{candidate.email}</span>
                         </span>
                       </label>
                     ))}

@@ -30,6 +30,7 @@ export function useAuth() {
     hasFeature,
     canReadFeature: (codename: string) => hasFeature(codename, "read"),
     canWriteFeature: (codename: string) => hasFeature(codename, "write"),
+    canManageUserIdentity: user?.role.roleType === "super_admin" || user?.role.roleType === "admin",
     hasRoleType: (code: RoleTypeCode) => user?.role.roleType === code,
     canManageRoleType: (targetRoleType: RoleTypeCode) => canManageRoleType(user?.role.roleType, targetRoleType),
   };

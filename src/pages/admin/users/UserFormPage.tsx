@@ -1,5 +1,5 @@
 import { Form, Formik } from "formik";
-import { useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import * as Yup from "yup";
 
 import {
@@ -59,7 +59,10 @@ export function UserFormPage() {
   const [resendTemporaryPassword, { isLoading: isResending }] = useResendTemporaryPasswordMutation();
   const navigate = useNavigate();
   const { notifyInfo } = useToast();
-  const { canManageRoleType, user: currentUser } = useAuth();
+  const { canManageRoleType, canManageUserIdentity, user: currentUser } = useAuth();
+
+  // Creating an account requires identity fields reserved for administrators.
+  if (!isEditMode && !canManageUserIdentity) return <Navigate to="/admin/users" replace />;
 
   const isLoading = isLoadingProjects || isLoadingRoles || isLoadingRoleTypes || isLoadingActiveUsers || (isEditMode && isLoadingUser);
   if (isLoading) return <LoadingState label="Loading…" />;
@@ -90,20 +93,20 @@ export function UserFormPage() {
   });
 
   const initialValues: UserFormValues = {
-    email: user?.email ?? "",
+    email: canManageUserIdentity ? user?.email ?? "" : "",
     first_name: user?.first_name ?? "",
     last_name: user?.last_name ?? "",
-    emp_id: user?.emp_id ?? "",
+    emp_id: canManageUserIdentity ? user?.emp_id ?? "" : "",
     role_id: user ? String(user.role_id) : "",
     project_id: user?.project_id != null ? String(user.project_id) : "",
     reports_to_id: user?.reports_to_id != null ? String(user.reports_to_id) : "",
   };
 
   const validationSchema = Yup.object({
-    email: Yup.string().required("Email is required").email("Enter a valid email address"),
+    email: canManageUserIdentity ? Yup.string().required("Email is required").email("Enter a valid email address") : Yup.string(),
     first_name: Yup.string().required("First name is required").max(128),
     last_name: Yup.string().required("Last name is required").max(128),
-    emp_id: Yup.string().required("Employee ID is required").max(64),
+    emp_id: canManageUserIdentity ? Yup.string().required("Employee ID is required").max(64) : Yup.string(),
     role_id: Yup.string().required("Role is required"),
     project_id: Yup.string().when("role_id", {
       is: (roleId: string) => projectRuleFor(roleId) === "required",
@@ -126,11 +129,9 @@ export function UserFormPage() {
   ) => {
     const rule = projectRuleFor(values.role_id);
     const selectedRoleType = roleTypeCodeByRoleId.get(Number(values.role_id));
-    const payload: UserCreatePayload = {
-      email: values.email,
+    const payload: Omit<UserCreatePayload, "email" | "emp_id"> = {
       first_name: values.first_name,
       last_name: values.last_name,
-      emp_id: values.emp_id,
       role_id: Number(values.role_id),
       project_id: rule === "required" && values.project_id ? Number(values.project_id) : null,
       reports_to_id:
@@ -139,7 +140,10 @@ export function UserFormPage() {
           : null,
     };
 
-    const result = isEditMode ? await updateUser({ id: userId as number, body: payload }) : await createUser(payload);
+    const identity = canManageUserIdentity ? { email: values.email, emp_id: values.emp_id } : {};
+    const result = isEditMode
+      ? await updateUser({ id: userId as number, body: { ...payload, ...identity } })
+      : await createUser({ ...payload, email: values.email, emp_id: values.emp_id });
 
     if ("error" in result) {
       // onQueryStarted already toasted the backend's message; field-level
@@ -206,10 +210,10 @@ export function UserFormPage() {
           );
           return (
             <Form className="mt-6 flex flex-col gap-4 rounded-lg border border-border bg-surface p-6">
-              <TextField label="Email" name="email" type="email" />
+              {canManageUserIdentity && <TextField label="Email" name="email" type="email" />}
               <TextField label="First name" name="first_name" />
               <TextField label="Last name" name="last_name" />
-              <TextField label="Employee ID" name="emp_id" />
+              {canManageUserIdentity && <TextField label="Employee ID" name="emp_id" />}
               <SelectField label="Role" name="role_id" placeholder="Select a role…">
                 {assignableRoles.map((role) => (
                   <option key={role.id} value={role.id}>
@@ -234,7 +238,7 @@ export function UserFormPage() {
                 >
                   {reportingCandidates.map((candidate) => (
                     <option key={candidate.id} value={candidate.id}>
-                      {candidate.first_name} {candidate.last_name} ({candidate.emp_id})
+                      {candidate.first_name} {candidate.last_name}
                     </option>
                   ))}
                 </SelectField>

@@ -165,7 +165,7 @@ export function TeamManagementPage() {
                 className={`${inputClasses} min-w-0 flex-1`}
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="Search name, employee ID, or email"
+                placeholder="Search by name"
               />
               <Button type="submit" variant="secondary">Search</Button>
               {search && (
@@ -235,7 +235,6 @@ export function TeamManagementPage() {
                         <input type="checkbox" aria-label="Select this page" checked={allPageSelected} onChange={togglePage} />
                       </th>
                       <th className="px-4 py-3 font-medium">Coder</th>
-                      <th className="px-4 py-3 font-medium">Employee ID</th>
                       <th className="px-4 py-3 font-medium">Current lead</th>
                       <th className="px-4 py-3 font-medium">Assign or move to</th>
                     </tr>
@@ -255,9 +254,7 @@ export function TeamManagementPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="font-medium text-content-primary">{coder.first_name} {coder.last_name}</div>
-                            <div className="text-xs text-content-muted">{coder.email}</div>
                           </td>
-                          <td className="px-4 py-3 text-content-secondary">{coder.emp_id}</td>
                           <td className="px-4 py-3 text-content-secondary">
                             {currentLead ? `${currentLead.firstName} ${currentLead.lastName}` : "Unassigned"}
                           </td>
@@ -384,7 +381,6 @@ function CoderOverviewPanel({ leads }: { leads: TeamLeadSummary[] }) {
                   <tr key={row.coder.id}>
                     <td className="px-4 py-3">
                       <div className="font-medium text-content-primary">{row.coder.firstName} {row.coder.lastName}</div>
-                      <div className="text-xs text-content-muted">{row.coder.empId}</div>
                     </td>
                     <td className="px-4 py-3 capitalize text-content-secondary">{row.coder.roleType}</td>
                     <td className="px-4 py-3 text-content-secondary">{row.cohort?.label ?? "Unassigned / BAU"}</td>
@@ -490,7 +486,7 @@ function CohortsPanel() {
                     />
                     <span>
                       <span className="block text-sm font-medium text-content-primary">{user.firstName} {user.lastName}</span>
-                      <span className="block text-xs text-content-muted">{user.roleType} · {user.empId}</span>
+                      <span className="block text-xs text-content-muted">{user.roleType}</span>
                     </span>
                   </label>
                 ))}
@@ -560,7 +556,7 @@ function CohortsPanel() {
                                     {member.user.firstName} {member.user.lastName}
                                   </div>
                                   <div className="mt-0.5 text-xs text-content-muted">
-                                    {member.user.roleType} · {member.user.empId} · {member.currentStage ?? "Stage not started"}
+                                    {member.user.roleType} · {member.currentStage ?? "Stage not started"}
                                   </div>
                                 </div>
                               ))}
@@ -733,7 +729,6 @@ function LeadSummaryView({
         <LeadCard
           key={lead.id}
           name={`${lead.firstName} ${lead.lastName}`}
-          detail={lead.empId}
           count={lead.coderCount}
           onClick={() => onChooseLead(lead.id)}
         />
@@ -742,7 +737,7 @@ function LeadSummaryView({
   );
 }
 
-function LeadCard({ name, detail, count, attention = false, onClick }: { name: string; detail: string; count: number; attention?: boolean; onClick: () => void }) {
+function LeadCard({ name, detail, count, attention = false, onClick }: { name: string; detail?: string; count: number; attention?: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -751,7 +746,7 @@ function LeadCard({ name, detail, count, attention = false, onClick }: { name: s
       }`}
     >
       <div className="font-medium text-content-primary">{name}</div>
-      <div className="text-xs text-content-muted">{detail}</div>
+      {detail && <div className="text-xs text-content-muted">{detail}</div>}
       <div className="mt-4 flex items-end justify-between">
         <span className="text-2xl font-semibold text-content-primary">{count}</span>
         <span className="text-sm font-medium text-brand-700">View coders →</span>

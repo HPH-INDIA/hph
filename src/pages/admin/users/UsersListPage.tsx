@@ -31,7 +31,7 @@ export function UsersListPage() {
   const [statusTab, setStatusTab] = useState<UserStatusFilter>("all");
   const { data: fetchedUsers, isLoading, isError, refetch } = useListUsersQuery(statusTab);
   const users = fetchedUsers?.filter((user) => user.role.roleType !== "super_admin");
-  const { canManageRoleType, canWriteFeature } = useAuth();
+  const { canManageRoleType, canWriteFeature, canManageUserIdentity } = useAuth();
   const canWriteUsers = canWriteFeature("user_management");
 
   const [deactivateUser, { isLoading: isDeactivating }] = useDeactivateUserMutation();
@@ -62,7 +62,7 @@ export function UsersListPage() {
           <h1 className="text-lg font-semibold text-content-primary">Users</h1>
           <p className="text-sm text-content-muted">Everyone with an account in this system.</p>
         </div>
-        {canWriteUsers && (
+        {canWriteUsers && canManageUserIdentity && (
           <Link to="/admin/users/new">
             <Button>New user</Button>
           </Link>
@@ -95,8 +95,6 @@ export function UsersListPage() {
             <thead className="bg-surface-muted text-xs uppercase tracking-wide text-content-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Email</th>
-                <th className="px-4 py-3 font-medium">Employee ID</th>
                 <th className="px-4 py-3 font-medium">Role</th>
                 <th className="px-4 py-3 font-medium">Project</th>
                 <th className="px-4 py-3 font-medium">Reports to</th>
@@ -118,8 +116,6 @@ export function UsersListPage() {
                         {user.first_login && <Badge tone="warning">First login</Badge>}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-content-secondary">{user.email}</td>
-                    <td className="px-4 py-3 text-content-secondary">{user.emp_id}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="text-content-primary">{user.role.title}</span>

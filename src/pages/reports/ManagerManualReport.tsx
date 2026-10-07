@@ -73,7 +73,6 @@ export function PeriodRecordsTable({ entries, caption, multipleDays }: { entries
               <tr key={user.id}>
                 <th scope="row" className="px-3 py-3 font-medium text-content-primary">
                   <span className="block whitespace-nowrap">{userName(user)}</span>
-                  <span className="block text-xs font-normal text-content-muted">{user.empId}</span>
                 </th>
                 {multipleDays && <td className="px-3 py-3 tabular-nums text-content-secondary">{new Set(records.map((record) => record.date)).size}</td>}
                 <td className="px-3 py-3 tabular-nums text-content-secondary">{submitted ? number(counts.pvp) : "—"}</td>

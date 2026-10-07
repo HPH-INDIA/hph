@@ -73,7 +73,6 @@ function TeamRecordsTable({
               <tr key={user.id}>
                 <th scope="row" className="px-3 py-3 font-medium text-content-primary">
                   <span className="block whitespace-nowrap">{userName(user)}</span>
-                  <span className="block text-xs font-normal text-content-muted">{user.empId}</span>
                 </th>
                 <td className="px-3 py-3 text-content-secondary">{record?.pvpCount ?? "—"}</td>
                 <td className="px-3 py-3 text-content-secondary">{record?.foundationCount ?? "—"}</td>

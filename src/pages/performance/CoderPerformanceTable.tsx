@@ -19,7 +19,7 @@ export function CoderPerformanceTable({ members, caption, onPick, day = false }:
   if (!members.length) return <p className="p-5 text-sm text-content-secondary">No coders in this selection.</p>;
   const identity = (member: CoderPerformanceMember) => <>
     {onPick ? <button type="button" onClick={() => onPick(member.userId)} className="rounded text-left font-medium text-brand-700 underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-brand-500">{member.name}</button> : <span className="font-medium">{member.name}</span>}
-    {(member.empId || !member.isActive) && <div className="mt-1 text-xs text-content-secondary">{[member.empId, !member.isActive ? "Inactive" : null].filter(Boolean).join(" · ")}</div>}
+    {!member.isActive && <div className="mt-1 text-xs text-content-secondary">Inactive</div>}
     {day && !member.efficiency && <span className="mt-1 block text-xs font-normal text-content-secondary">No records for this day</span>}
   </>;
   const values = (member: CoderPerformanceMember) => [

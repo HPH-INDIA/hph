@@ -99,7 +99,6 @@ export function KaironTeamTable({ members, caption, onSelect }: {
               }}>
               <th scope="row" className="px-4 py-3 text-left font-medium text-content-primary">
                 {member.user.firstName} {member.user.lastName}
-                <span className="block text-xs font-normal text-content-muted">{member.user.empId}</span>
               </th>
               <td className="px-4 py-3 text-right tabular-nums text-content-secondary">{number(member.summary.pvp)}</td>
               <td className="px-4 py-3 text-right tabular-nums text-content-secondary">{number(member.summary.foundation)}</td>
