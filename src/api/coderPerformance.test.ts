@@ -4,7 +4,7 @@ import { leadCoderDay, loadLeadCoderPerformance, managerCoderDay, managerCoderDa
 import type { DailyEfficiency, EfficiencySummary, LeadDashboardSummary, ManagerPerformanceMember } from "./types";
 
 const from = "2026-09-01", to = "2026-09-30";
-const metrics = { manualCharts: 5, kaironCharts: 7, manualCpd: "10.0", kaironCpd: "14.0", targetCpd: "30.0", manualEfficiencyPercent: "33.3", kaironEfficiencyPercent: "46.7" };
+const metrics = { manualCharts: 5, kaironCharts: 7, adjustedCpd: "15.00", manualCpd: "10.0", kaironCpd: "14.0", targetCpd: "30.0", manualEfficiencyPercent: "33.3", kaironEfficiencyPercent: "46.7" };
 const member = (userId: number): CoderPerformanceMember => ({ userId, name: `Coder ${userId}`, isActive: true, efficiency: metrics });
 function response(userId: number, overrides: Partial<LeadDashboardSummary> = {}) {
   return { from, to, selectedCoderId: userId, coders: { goal: { userCount: 1 }, efficiency: { ...metrics, daily: [] } }, ...overrides };
@@ -23,6 +23,7 @@ test("lead details preserve roster order and request each authorized coder for t
   });
   assert.ok("data" in result);
   assert.deepEqual(result.data.map((row) => row.userId), [3, 1, 2]);
+  assert.ok(result.data.every((row) => row.efficiency?.adjustedCpd === "15.00"));
   assert.equal(calls.length, 3);
   assert.ok(peak <= 3);
   for (const url of calls) {
@@ -69,6 +70,7 @@ test("lead daily breakdown uses that exact date, preserves true zeros, and inclu
   const result = leadCoderDay(rows, "2026-09-02");
   assert.equal(result.length, 3);
   assert.equal(result[0].efficiency?.manualCharts, 0);
+  assert.equal(result[0].efficiency?.adjustedCpd, "15.00");
   assert.equal(result[1].efficiency, null);
   assert.equal(result[2].efficiency, null);
   assert.equal(rows[0].efficiency?.manualCharts, 5);
@@ -87,6 +89,7 @@ test("manager day results exclude QA and outside users, and retain zero-producti
   });
   const result = managerCoderDay([member(1), member(2), member(3)], [day(1, "employee", 1), day(2, "lead", 1), day(9, "employee", 1)]);
   assert.deepEqual(result.map((row) => row.userId), [1, 2, 3]);
+  assert.equal(result[0].efficiency?.adjustedCpd, "15.00");
   assert.equal(result[0].efficiency?.manualCharts, 0);
   assert.equal(result[1].efficiency, null);
   assert.equal(result[2].efficiency, null);

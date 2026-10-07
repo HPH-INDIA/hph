@@ -15,7 +15,8 @@ export const dailyColumns: SortColumn<DailyEfficiency>[] = [
 export const coderColumns: SortColumn<CoderPerformanceMember>[] = [
   { key: "name", label: "Coder", value: (row) => row.name },
   ...([
-    ["manualCharts", "Manual charts"], ["kaironCharts", "Kairon charts"], ["manualCpd", "Manual CPD"],
+    ["manualCharts", "Manual charts completed"], ["kaironCharts", "Kairon charts completed"],
+    ["adjustedCpd", "Adjusted target CPD"], ["manualCpd", "Manual CPD"],
     ["kaironCpd", "Kairon CPD"], ["targetCpd", "Target CPD"], ["manualEfficiencyPercent", "Manual efficiency"], ["kaironEfficiencyPercent", "Kairon efficiency"],
   ] as const).map(([key, label]) => ({ key, label, value: (row: CoderPerformanceMember) => numericSortValue(row.efficiency?.[key] ?? (key === "manualCharts" || key === "kaironCharts" ? 0 : null)), defaultDirection: "desc" as const })),
 ];

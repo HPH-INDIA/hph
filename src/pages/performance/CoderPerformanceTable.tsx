@@ -7,7 +7,7 @@ import { EfficiencyValue } from "./EfficiencyValue";
 import { numberLabel } from "./performanceView";
 import { MemberPerformanceExport } from "./MemberPerformanceExport";
 
-const headers = ["Manual charts", "Kairon charts", "Manual CPD", "Kairon CPD", "Target CPD", "Manual efficiency", "Kairon efficiency"];
+const headers = coderColumns.slice(1).map((column) => column.label);
 
 export function CoderPerformanceTable({ members, caption, onPick, day = false, exportName }: {
   members: CoderPerformanceMember[];
@@ -26,6 +26,7 @@ export function CoderPerformanceTable({ members, caption, onPick, day = false, e
   </>;
   const values = (member: CoderPerformanceMember) => [
     numberLabel(member.efficiency?.manualCharts ?? 0), numberLabel(member.efficiency?.kaironCharts ?? 0),
+    numberLabel(member.efficiency?.adjustedCpd, 2),
     numberLabel(member.efficiency?.manualCpd, 1), numberLabel(member.efficiency?.kaironCpd, 1), numberLabel(member.efficiency?.targetCpd, 1),
     <EfficiencyValue value={member.efficiency?.manualEfficiencyPercent ?? null} />,
     <EfficiencyValue value={member.efficiency?.kaironEfficiencyPercent ?? null} />,
@@ -36,19 +37,19 @@ export function CoderPerformanceTable({ members, caption, onPick, day = false, e
       <MemberPerformanceExport members={sortedMembers} exportName={exportName} />
     </div>}
     <div className="hidden min-w-0 overflow-x-auto sm:block" tabIndex={0} role="region" aria-label={caption}>
-      <table className="w-full min-w-[980px] text-left text-sm">
+      <table className="w-full min-w-[1120px] text-left text-sm">
         <caption className="sr-only">{caption}</caption>
-        <thead className="bg-surface-muted text-xs text-content-secondary"><tr>{coderColumns.map((column, index) => <SortableHeader key={column.key} column={column} sort={sort} onSort={setSort} align={index ? "right" : "left"} className="px-4 py-3 font-medium" />)}</tr></thead>
+        <thead className="bg-surface-muted text-xs text-content-secondary"><tr>{coderColumns.map((column, index) => <SortableHeader key={column.key} column={column} sort={sort} onSort={setSort} align={index ? "right" : "left"} className={`px-4 py-3 font-medium ${column.key === "adjustedCpd" ? "bg-brand-50 text-brand-600" : ""}`} />)}</tr></thead>
         <tbody className="divide-y divide-border">{sortedMembers.map((member) => <tr key={member.userId} className="hover:bg-brand-50/50">
           <th scope="row" className="px-4 py-3 font-normal">{identity(member)}</th>
-          {values(member).map((value, index) => <td key={headers[index]} className="px-4 py-3 text-right tabular-nums">{value}</td>)}
+          {values(member).map((value, index) => <td key={headers[index]} className={`px-4 py-3 text-right tabular-nums ${index === 2 ? "bg-brand-50 font-semibold text-brand-600" : ""}`}>{value}</td>)}
         </tr>)}</tbody>
       </table>
     </div>
     <div className="border-b border-border px-4 py-3 sm:hidden"><TableSortControls columns={coderColumns} sort={sort} onSort={setSort} /></div>
     <div className="divide-y divide-border sm:hidden" aria-label={caption}>{sortedMembers.map((member) => <article key={member.userId} className="px-4 py-4">
       <div className="text-sm">{identity(member)}</div>
-      <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4">{values(member).map((value, index) => <div key={headers[index]}><dt className="text-xs text-content-secondary">{headers[index]}</dt><dd className="mt-1 text-sm font-semibold tabular-nums">{value}</dd></div>)}</dl>
+      <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4">{values(member).map((value, index) => <div key={headers[index]} className={index === 2 ? "col-span-2 flex items-center justify-between gap-3 rounded-md bg-brand-50 px-3 py-2 text-brand-600" : ""}><dt className={`text-xs ${index === 2 ? "font-medium" : "text-content-secondary"}`}>{headers[index]}</dt><dd className={`${index === 2 ? "" : "mt-1"} text-sm font-semibold tabular-nums`}>{value}</dd></div>)}</dl>
     </article>)}</div>
   </>;
 }

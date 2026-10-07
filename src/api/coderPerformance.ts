@@ -3,7 +3,7 @@ import type { ApiRequestArgs } from "./baseQuery";
 import { buildQueryString } from "./queryString";
 import type { DailyEfficiency, EfficiencySummary, LeadDashboardSummary, ManagerDashboardQuery, ManagerPerformanceMember } from "./types";
 
-export type CoderMetrics = Pick<EfficiencySummary, "manualCharts" | "kaironCharts" | "manualCpd" | "kaironCpd" | "targetCpd" | "manualEfficiencyPercent" | "kaironEfficiencyPercent">;
+export type CoderMetrics = Pick<EfficiencySummary, "manualCharts" | "kaironCharts" | "adjustedCpd" | "manualCpd" | "kaironCpd" | "targetCpd" | "manualEfficiencyPercent" | "kaironEfficiencyPercent">;
 export interface CoderPerformanceMember {
   userId: number;
   name: string;

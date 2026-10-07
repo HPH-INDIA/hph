@@ -46,3 +46,17 @@ test("coder sorting keeps genuine zero rates ahead of unavailable rates and uses
   assert.deepEqual(sortTableRows(members,coderColumns,{key:"manualEfficiencyPercent",direction:"desc"}).map(row=>row.userId),[3,2,1]);
   assert.deepEqual(sortTableRows(members,coderColumns,{key:"manualCharts",direction:"asc"}).map(row=>row.userId),[1,2,3]);
 });
+
+test("adjusted target sorts numerically and follows completed chart counts", () => {
+  const members = [
+    { userId: 1, efficiency: { adjustedCpd: null } },
+    { userId: 2, efficiency: { adjustedCpd: "0.00" } },
+    { userId: 3, efficiency: { adjustedCpd: "28.13" } },
+    { userId: 4, efficiency: { adjustedCpd: "100.00" } },
+  ] as CoderPerformanceMember[];
+  assert.deepEqual(coderColumns.slice(1, 5).map((column) => column.label), [
+    "Manual charts completed", "Kairon charts completed", "Adjusted target CPD", "Manual CPD",
+  ]);
+  assert.deepEqual(sortTableRows(members, coderColumns, { key: "adjustedCpd", direction: "desc" }).map((row) => row.userId), [4, 3, 2, 1]);
+  assert.deepEqual(sortTableRows(members, coderColumns, { key: "adjustedCpd", direction: "asc" }).map((row) => row.userId), [2, 3, 4, 1]);
+});
