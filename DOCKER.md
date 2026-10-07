@@ -40,3 +40,7 @@ docker compose --env-file .env.compose up --build -d
 For the full stack, run this from `hph` and open `http://SERVER_IP:8080` on a client machine. The frontend listens on all server interfaces; permit TCP port 8080 in the server firewall for the intended network. The backend port 8081 binds to loopback by default, and Nginx reaches it through the Docker network. For backend-only LAN access, set `BACKEND_BIND_ADDRESS=0.0.0.0` and permit the chosen backend port.
 
 HTTP uses `SESSION_COOKIE_SECURE=false`. If you terminate HTTPS in a reverse proxy, set it to `true` and use the HTTPS frontend URL and origin. The Supabase database and all existing backend secrets remain in `.env.render`; only server-specific settings go in `.env.compose`.
+
+## Dedicated test environment
+
+Use `Dockerfile.test` and `compose.test.yaml` for the separate `hph-test` stack. See [DOCKER_TEST.md](DOCKER_TEST.md) for setup. The test API reads `.env.test` and keeps PostgreSQL and Storage on Supabase.

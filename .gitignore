@@ -27,3 +27,7 @@ yarn-error.log*
 # Docker Compose environment overrides
 .env.compose
 !.env.compose.example
+
+# Dedicated Docker test environment
+.env.test
+!.env.test.example
