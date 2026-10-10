@@ -1,3 +1,4 @@
+import { displayNumber, displayCpd } from "@/utils/displayNumber";
 import { useRef, useState } from "react";
 import { FieldArray, Form, Formik, type FormikHelpers } from "formik";
 import * as Yup from "yup";
@@ -17,7 +18,7 @@ import {
 } from "@/api/types";
 import { useListUsersQuery } from "@/api/usersApi";
 import { Button } from "@/components/ui/Button";
-import { Drawer } from "@/components/ui/Drawer";
+import { ActionScreen } from "@/components/ui/ActionScreen";
 import { inputClasses, SelectField, TextField } from "@/components/ui/FormField";
 import { ManualRecordStatusIndicator } from "@/components/ui/ManualRecordStatusIndicator";
 import { PaginationControls } from "@/components/ui/PaginationControls";
@@ -160,11 +161,11 @@ function ManualEntryForm({ record, initialDate, onCancel, onSaved }: ManualEntry
     <section id="manual-entry-form">
       <Formik initialValues={manualInitialValues(record, initialDate)} validationSchema={manualValidationSchema} onSubmit={handleSubmit}>
         {({ errors, isSubmitting, submitCount, values }) => (
-          <Form noValidate className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4">
-            <TextField label="Date *" name="date" type="date" aria-required readOnly={Boolean(record)} />
+          <Form noValidate className="grid gap-4 rounded-lg border border-border bg-surface p-5 sm:grid-cols-2">
+            <div className="sm:col-span-2"><TextField label="Date *" name="date" type="date" aria-required readOnly={Boolean(record)} /></div>
             <TextField label="PVP count *" name="pvpCount" type="number" min="0" step="1" aria-required />
             <TextField label="Foundation count *" name="foundationCount" type="number" min="0" step="1" aria-required />
-            <div className="rounded-md border border-brand-200 bg-brand-50 px-4 py-3">
+            <div className="rounded-md border border-brand-200 bg-brand-50 px-4 py-3 sm:col-span-2">
               <span className="block text-xs font-medium text-brand-700">Total production</span>
               <span className="mt-1 block text-2xl font-semibold text-brand-900">
                 {(Number(values.pvpCount) || 0) + (Number(values.foundationCount) || 0)}
@@ -175,12 +176,12 @@ function ManualEntryForm({ record, initialDate, onCancel, onSaved }: ManualEntry
             <TextField label="Leave (hours) *" name="leaveHours" type="number" min="0" max={MANUAL_DAILY_RECORD_MAX_HOURS} step="0.25" aria-required />
             <FieldArray name="meetings">
               {({ push, remove }) => (
-                <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-muted p-4">
+                <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-muted p-4 sm:col-span-2">
                   <h3 className="font-semibold text-content-primary">Meetings / engagements</h3>
                   <p className="text-xs text-content-muted">Add each meeting separately with its type and hours.</p>
                   {values.meetings.map((_, index) => (
-                    <div key={index} className="flex flex-col gap-3 rounded-md border border-border bg-surface p-3">
-                      <h4 className="text-sm font-semibold text-content-secondary">Meeting {index + 1}</h4>
+                    <div key={index} className="grid items-end gap-3 rounded-md border border-border bg-surface p-3 sm:grid-cols-2">
+                      <h4 className="text-sm font-semibold text-content-secondary sm:col-span-2">Meeting {index + 1}</h4>
                       <SelectField label="Meeting type *" name={`meetings.${index}.type`} placeholder="Select meeting type" aria-required>
                         {MANUAL_MEETING_TYPES.map((meetingType) => (
                           <option key={meetingType} value={meetingType}>{meetingType}</option>
@@ -191,12 +192,12 @@ function ManualEntryForm({ record, initialDate, onCancel, onSaved }: ManualEntry
                     </div>
                   ))}
                   <Button type="button" variant="secondary" disabled={values.meetings.length >= 20} onClick={() => push({ type: "", hours: "" })}>Add meeting</Button>
-                  <p className="text-sm font-medium text-content-secondary">Total meeting hours: <strong className="text-content-primary">{(Math.round(values.meetings.reduce((total, meeting) => total + (Number(meeting.hours) || 0), 0) * 100) / 100).toFixed(2)}</strong></p>
+                  <p className="text-sm font-medium text-content-secondary">Total meeting hours: <strong className="text-content-primary">{displayNumber(values.meetings.reduce((total, meeting) => total + (Number(meeting.hours) || 0), 0))}</strong></p>
                   {submitCount > 0 && typeof errors.meetings === "string" && <p role="alert" className="text-xs text-danger">{errors.meetings}</p>}
                 </div>
               )}
             </FieldArray>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 border-t border-border pt-4 sm:col-span-2">
               <Button type="submit" className="min-w-0 w-full" isLoading={isSubmitting}>{record ? "Save changes" : "Save daily record"}</Button>
               <Button type="button" variant="secondary" className="min-w-0 w-full" disabled={isSubmitting} onClick={onCancel}>Cancel</Button>
             </div>
@@ -375,7 +376,7 @@ export function ReportsManualTab({ window }: { window: ManualReportWindow }) {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="source-tab flex flex-col gap-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-content-primary">{canViewTeam ? "Manual entries" : "My records"}</h2>
@@ -404,12 +405,12 @@ export function ReportsManualTab({ window }: { window: ManualReportWindow }) {
         )}
       </div>
 
-      <Drawer
+      <ActionScreen
         open={canSubmit && isEntryFormOpen}
         onClose={() => setIsEntryFormOpen(false)}
         title={editingRecord ? "Edit daily production" : "Add daily production"}
         description={isLead ? "Your daily entry is automatically approved, including any edits." : "Submit your own production record for the selected date."}
-        widthClass="max-w-lg"
+        widthClass="max-w-3xl"
       >
         <ManualEntryForm
           key={editingRecord?.id ?? entryDate}
@@ -421,9 +422,9 @@ export function ReportsManualTab({ window }: { window: ManualReportWindow }) {
             setIsEntryFormOpen(false);
           }}
         />
-      </Drawer>
+      </ActionScreen>
 
-      <Drawer
+      <ActionScreen
         open={canBulkUpload && isBulkUploadOpen}
         onClose={() => setIsBulkUploadOpen(false)}
         title="Bulk upload manual records"
@@ -437,7 +438,7 @@ export function ReportsManualTab({ window }: { window: ManualReportWindow }) {
             setIsBulkUploadOpen(false);
           }}
         />
-      </Drawer>
+      </ActionScreen>
 
       {canViewTeam && isManager && <ManagerManualReport window={window} />}
       {canViewTeam && isLead && (
@@ -478,12 +479,18 @@ export function ReportsManualTab({ window }: { window: ManualReportWindow }) {
                       <td className="px-4 py-3 text-content-secondary">{record.pvpCount}</td>
                       <td className="px-4 py-3 text-content-secondary">{record.foundationCount}</td>
                       <td className="px-4 py-3 font-medium text-content-primary">{record.productionCount}</td>
-                      <td className="px-4 py-3 text-content-secondary">{record.dailyTarget ?? "—"}</td>
-                      <td className="px-4 py-3 text-content-secondary">{record.adjustedCpd ?? "—"}</td>
-                      <td className="px-4 py-3 text-content-secondary">{record.techIssuesDowntimeHours}</td>
-                      <td className="px-4 py-3 text-content-secondary">{record.noInventoryIdleTimeHours}</td>
-                      <td className="px-4 py-3 text-content-secondary">{record.leaveHours}</td>
-                      <td className="px-4 py-3 text-content-secondary">{record.meetingEngagementHours}</td>
+                      <td className="px-4 py-3 text-content-secondary">
+                        {record.dailyTarget == null ? "—" : displayNumber(record.dailyTarget)}
+                        {record.foundationDailyTarget != null && <div className="mt-1 text-xs text-content-muted">
+                          PVP {record.pvpDailyTarget ?? "—"} · Foundation {record.foundationDailyTarget}
+                          {record.dailyTarget == null && <div>Awaiting a calculable chart mix</div>}
+                        </div>}
+                      </td>
+                      <td className="px-4 py-3 text-content-secondary">{displayCpd(record.adjustedCpd)}</td>
+                      <td className="px-4 py-3 text-content-secondary">{displayNumber(record.techIssuesDowntimeHours)}</td>
+                      <td className="px-4 py-3 text-content-secondary">{displayNumber(record.noInventoryIdleTimeHours)}</td>
+                      <td className="px-4 py-3 text-content-secondary">{displayNumber(record.leaveHours)}</td>
+                      <td className="px-4 py-3 text-content-secondary">{displayNumber(record.meetingEngagementHours)}</td>
                       <td className="px-4 py-3 text-content-secondary">{formatManualMeetings([record])}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-1">

@@ -86,7 +86,7 @@ export function KaironUploadFormPage({ embedded = false, onCancel, onStarted }: 
     <div className="flex max-w-3xl flex-col gap-6">
       {!embedded && (
         <div>
-          <h1 className="text-lg font-semibold text-content-primary">Upload Kairon chart records</h1>
+          <h1 data-metric="kairon" className="metric-label text-lg font-semibold text-content-primary">Upload Kairon chart records</h1>
           <p className="text-sm text-content-muted">
             Upload a month-to-date or project-to-date Kairon CSV, ODS, XLS, or XLSX file. Patient names are removed in
             your browser; MBI is used only to prevent duplicate charts and is never stored as plain text.

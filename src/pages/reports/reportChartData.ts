@@ -1,4 +1,7 @@
+import { officeHolidayDates } from "./officeHolidayCalendar";
 import type { DailyEfficiency } from "@/api/types";
+
+export type CpdTargetRecord = { date: string; dailyTarget?: number | null; adjustedCpd?: string | null };
 
 export type GraphInterval = "day" | "week" | "month";
 export interface ReportChartRow {
@@ -35,6 +38,14 @@ export function intervalLabel(key: string, interval: GraphInterval) {
   return interval === "week" ? `Week of ${label}` : label;
 }
 
+/** Upright two-line axis labels; full date remains in the tooltip/readout. */
+export function axisDateLabel(key: string, interval: GraphInterval) {
+  const date = new Date(`${key.length === 7 ? `${key}-01` : key}T00:00:00Z`);
+  const month = date.toLocaleDateString("en-US", {month: "short", timeZone: "UTC"});
+  return interval === "month" ? {top: month, bottom: String(date.getUTCFullYear())}
+    : {top: `${interval === "week" ? "Wk " : ""}${date.getUTCDate()}`, bottom: month};
+}
+
 function sumKnown(values: Array<number | string | null | undefined>) {
   const known = values.filter((value) => value != null && Number.isFinite(Number(value)));
   return known.length ? known.reduce<number>((sum, value) => sum + Number(value), 0) : null;
@@ -47,7 +58,7 @@ function meanKnown(values: Array<number | string | null | undefined>) {
 
 // All charts consume this exact ordered domain. Missing weekdays keep their slot;
 // weekend records stay visible without adding empty weekends to the timeline.
-export function buildReportChartRows(sources: DailyEfficiency[][], from: string, to: string, interval: GraphInterval): ReportChartRow[] {
+export function buildReportChartRows(sources: DailyEfficiency[][], from: string, to: string, interval: GraphInterval, compactNonWorkingDays = false, targetRecords?: CpdTargetRecord[]): ReportChartRow[] {
   const days = new Map<string, DailyEfficiency[]>();
   for (const rows of sources) for (const row of rows) {
     if (row.date < from || row.date > to) continue;
@@ -60,10 +71,26 @@ export function buildReportChartRows(sources: DailyEfficiency[][], from: string,
   }
   const groups = new Map<string, DailyEfficiency[]>();
   for (const [date, rows] of [...days.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+    const nonWorking = weekday === 0 || weekday === 6 || officeHolidayDates.has(date);
+    if (compactNonWorkingDays && nonWorking && !rows.some(row => row.kaironCharts > 0 || row.manualCharts > 0)) continue;
     const key = intervalKey(date, interval);
     groups.set(key, [...(groups.get(key) ?? []), ...rows]);
   }
+  // Aggregated team rows contain sums, not one person's daily targets.
+  // Separate individual records supply the CPD denominator without changing production.
+  const targetGroups = new Map<string, CpdTargetRecord[]>();
+  for (const record of targetRecords ?? []) {
+    if (record.date < from || record.date > to) continue;
+    const dayRows = days.get(record.date);
+    const weekday = new Date(`${record.date}T00:00:00Z`).getUTCDay();
+    if (compactNonWorkingDays && (weekday === 0 || weekday === 6 || officeHolidayDates.has(record.date))
+      && !dayRows?.some(row => row.kaironCharts > 0 || row.manualCharts > 0)) continue;
+    const key = intervalKey(record.date, interval);
+    targetGroups.set(key, [...(targetGroups.get(key) ?? []), record]);
+  }
   return [...groups.entries()].map(([date, rows]) => {
+    const targets = targetRecords === undefined ? rows : targetGroups.get(date) ?? [];
     const capacityRows = rows.filter((row) => row.targetMinutes !== null);
     const minutes = capacityRows.reduce((sum, row) => sum + row.targetMinutes!, 0);
     const actualCpd = (key: "manualCharts" | "kaironCharts") => minutes > 0
@@ -74,9 +101,9 @@ export function buildReportChartRows(sources: DailyEfficiency[][], from: string,
       adjusted: sumKnown(rows.map((row) => row.adjustedTarget)),
       manual: rows.length ? rows.reduce((sum, row) => sum + row.manualCharts, 0) : null,
       kairon: rows.length ? rows.reduce((sum, row) => sum + row.kaironCharts, 0) : null,
-      targetCpd: meanKnown(rows.map((row) => row.dailyTarget)),
+      targetCpd: meanKnown(targets.map((row) => row.dailyTarget)),
       // Use the saved manual CPD, which follows the existing Huddle exception.
-      adjustedCpd: meanKnown(rows.map((row) => row.adjustedCpd)),
+      adjustedCpd: meanKnown(targets.map((row) => row.adjustedCpd)),
       manualCpd: actualCpd("manualCharts"), kaironCpd: actualCpd("kaironCharts"),
       idle: rows.reduce((sum, row) => sum + row.idleMinutes / 60, 0),
       downtime: rows.reduce((sum, row) => sum + row.downtimeMinutes / 60, 0),

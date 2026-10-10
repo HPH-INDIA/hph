@@ -1,3 +1,6 @@
+import { UserDetailsScreen, type DetailPerson } from "./UserDetailsScreen";
+import { PerformanceTabs } from "./PerformanceTabs";
+import { ReportGraphs } from "@/pages/reports/ReportGraphs";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/api/apiError";
@@ -50,6 +53,9 @@ interface LeadDashboardViewProps {
 }
 
 export function LeadDashboardView({ name, today, filters, onFiltersChange, data, coderOptions, loading, error, onRetry }: LeadDashboardViewProps) {
+  const [detailPerson, setDetailPerson] = useState<DetailPerson | null>(null);
+  const [scope, setScope] = useState<"qa" | "coders">("coders");
+  const [panel, setPanel] = useState<"records" | "daily" | "summary" | "trends">("records");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draft, setDraft] = useState(filters);
   const periodLabel = leadPeriodLabel(filters, today);
@@ -58,13 +64,11 @@ export function LeadDashboardView({ name, today, filters, onFiltersChange, data,
   const draftError = leadFilterError(draft, today);
   const dailyPeriod = data ? dateRangeLabel(data.from, data.to) : periodLabel;
 
-  return <div className="mx-auto flex min-w-0 max-w-screen-2xl flex-col gap-6 text-content-primary">
-    <header className="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-brand-600">Lead workspace</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">QA & coder performance</h1>
-        <p className="mt-2 text-sm text-content-secondary">Your performance and your coders’ results, each with their own totals.</p>
-      </div>
+  return <div className="lead-dashboard-fit mx-auto flex min-w-0 max-w-screen-2xl flex-col gap-3 text-content-primary">
+    {detailPerson && <UserDetailsScreen key={detailPerson.userId} person={detailPerson} initialFilters={filters} onClose={() => setDetailPerson(null)} />}
+    <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <h1 className="sr-only">QA & coder performance</h1>
+      <PerformanceTabs value={scope} onChange={setScope} items={[{ value: "qa", label: "QA · your performance" }, { value: "coders", label: "Coders under you" }]} label="Lead performance scope" />
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-medium text-brand-800">{periodLabel}</span>
         <Button variant="secondary" onClick={() => { setDraft(filters); setFiltersOpen(true); }}>
@@ -72,6 +76,7 @@ export function LeadDashboardView({ name, today, filters, onFiltersChange, data,
         </Button>
       </div>
     </header>
+
 
     <Drawer open={filtersOpen} onClose={() => setFiltersOpen(false)} title="Lead dashboard filters" description="Dates apply to both sections. Coder selection applies only to coder results." widthClass="max-w-md">
       <form className="flex min-h-full flex-col gap-5" onSubmit={(event) => { event.preventDefault(); if (!draftError) { onFiltersChange(draft); setFiltersOpen(false); } }}>
@@ -88,40 +93,22 @@ export function LeadDashboardView({ name, today, filters, onFiltersChange, data,
 
     {error && <div className="space-y-3"><ErrorState message={error} onRetry={onRetry} />{filters.coderId !== "ALL" && <Button variant="secondary" onClick={() => onFiltersChange({ ...filters, coderId: "ALL" })}>Show all coders</Button>}</div>}
     {loading ? <LoadingState label="Loading QA and coder performance…" /> : !error && data ? <>
-      <section aria-labelledby="qa-section-title" className="flex min-w-0 flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h2 id="qa-section-title" className="text-lg font-semibold">QA · your performance</h2><p className="mt-1 text-xs text-content-secondary">{name} · Only your own records</p></div>
-          <span className="rounded-full bg-brand-100 px-3 py-1.5 text-xs font-medium text-brand-800">Personal</span>
-        </div>
-        <PeriodGoalCard goal={data.qa.goal} monthly={filters.dateMode === "month"} label="Your goal" />
-        <PerformanceSummary summary={data.qa.efficiency} label="QA performance summary" />
-        <details key={`qa-${data.from}-${data.to}`} className="group rounded-lg border border-border bg-surface">
-          <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg px-5 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 [&::-webkit-details-marker]:hidden">QA daily records <span aria-hidden="true" className="text-lg group-open:rotate-45">+</span></summary>
-          <DailySection section={data.qa} title="QA daily performance" periodLabel={dailyPeriod} exportName={`qa-performance-${data.from}-to-${data.to}`} />
-        </details>
-      </section>
 
-      <section aria-labelledby="coders-section-title" className="flex min-w-0 flex-col gap-3 border-t border-border pt-6">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div><h2 id="coders-section-title" className="text-lg font-semibold">Coders under you</h2><p className="mt-1 text-xs text-content-secondary">{coderName} · {data.coders.goal.userCount} {data.coders.goal.userCount === 1 ? "coder" : "coders"} in this period · QA excluded</p></div>
-          <div className="w-full sm:w-64"><CoderSelect label="Show coder results" value={filters.coderId} options={coderOptions} onChange={(coderId) => onFiltersChange({ ...filters, coderId })} /></div>
-        </div>
-        {data.coderOptions.length === 0 ? <EmptyState title="No coders in this period" description="Coders assigned directly to you will appear here. Your QA results are shown above." /> : <>
-          <PeriodGoalCard goal={data.coders.goal} monthly={filters.dateMode === "month"} label={filters.coderId === "ALL" ? "Combined coder goal" : `${coderName} · goal`} />
-          <TeamOverview summary={data.coders.efficiency} people={data.coders.goal.userCount} scope={filters.coderId === "ALL" ? "Coders under you · QA excluded" : `${coderName} · QA excluded`} />
-          <p className="px-1 text-xs leading-relaxed text-content-secondary">Chart counts and adjusted daily targets are added across coders. CPD and efficiency use combined hours and targets.</p>
-          <LeadCoderPerformance data={data} onPick={(coderId) => onFiltersChange({ ...filters, coderId })} />
-        </>}
-      </section>
-      <details className="rounded-lg border border-border bg-surface px-5 py-4 text-xs leading-relaxed text-content-secondary">
-        <summary className="cursor-pointer rounded text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">How lead totals work</summary>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <p>QA includes only your own data. Coder results include only coders who report directly to you. With All coders selected, targets and chart counts are combined. A coder selection changes only the coder section.</p>
-          <p>Adjusted target CPD uses saved manual records and excludes Huddle meetings from deductions. Calendar goals exclude weekends, office holidays, and full-leave days. Month mode shows a full-month goal; other modes show goals for the selected dates.</p>
-          <p>Manual and Kairon CPD normalize charts to an 8-hour day using Daily Refresh hours after downtime, idle time, all meetings, and leave. Efficiency compares charts with the target for those hours and is capped at 120%. Team and period metrics use the combined source totals.</p>
-          <p>Daily totals use available records. A dash means no value is available. Mixed stages means contributing coders had different stages on that date.</p>
-        </div>
-      </details>
+      <TeamOverview showRates summary={scope === "qa" ? data.qa.efficiency : data.coders.efficiency} people={scope === "qa" ? data.qa.goal.userCount : data.coders.goal.userCount} scope={scope === "qa" ? `${name} · own QA records` : `${coderName} · QA excluded`} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">{scope === "qa" ? "Your QA performance" : "Coder performance"}</p>
+        <PerformanceTabs value={panel === "daily" && scope === "qa" ? "records" : panel} onChange={setPanel}
+          items={[{value:"records",label:scope === "qa" ? "Daily" : "People"}, ...(scope === "coders" ? [{value:"daily" as const,label:"Daily"}] : []), {value:"summary",label:"Goal & rates"}, {value:"trends",label:"Trends"}]}
+          label="Lead performance view" compact />
+      </div>
+      <div className="lead-dashboard-results min-w-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600" role="region" aria-label="Lead performance results" tabIndex={0}>
+      {scope === "coders" && data.coderOptions.length === 0 ? <EmptyState title="No coders in this period" description="Coders assigned directly to you will appear here. Select QA to see your own records." />
+        : panel === "summary" ? <><PeriodGoalCard goal={scope === "qa" ? data.qa.goal : data.coders.goal} monthly={filters.dateMode === "month"} label={scope === "qa" ? "Your QA goal" : "Coder goal"} /><PerformanceSummary summary={scope === "qa" ? data.qa.efficiency : data.coders.efficiency} /></>
+        : panel === "trends" ? <ReportGraphs sources={[(scope === "qa" ? data.qa : data.coders).efficiency.daily]} from={data.from} to={data.to} teamView={scope === "coders"} />
+        : scope === "qa" ? <DailySection section={data.qa} title="QA daily performance" periodLabel={dailyPeriod} exportName={`qa-performance-${data.from}-to-${data.to}`} />
+        : <LeadCoderPerformance view={panel === "daily" ? "day" : "coder"} data={data} onPick={(coderId) => { const coder = coderOptions.find(item => item.userId === coderId); if (coder) setDetailPerson({...coder, roleType: "employee", leadName: name}); }} />}
+      </div>
+
     </> : null}
   </div>;
 }
@@ -138,5 +125,5 @@ function CoderSelect({ label, value, options, onChange }: { label: string; value
 
 
 function DailySection({ section, title, periodLabel, exportName }: { section: LeadPerformanceSection; title: string; periodLabel: string; exportName: string }) {
-  return <DailyPerformance rows={section.efficiency.daily} month={section.efficiency.from.slice(0, 7)} periodLabel={periodLabel} title={title} description="Charts, saved adjusted targets, CPD, and efficiency for the selected dates." exportName={exportName} showYear />;
+  return <DailyPerformance paginate={false} rows={section.efficiency.daily} month={section.efficiency.from.slice(0, 7)} periodLabel={periodLabel} title={title} description="Charts, saved adjusted targets, CPD, and efficiency for the selected dates." exportName={exportName} showYear />;
 }

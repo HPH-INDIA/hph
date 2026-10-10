@@ -38,6 +38,8 @@ export const kaironApi = apiSlice.injectEndpoints({
         { type: "KaironUploadBatches", id: "LIST" },
         { type: "KaironChartRecords", id: "LIST" },
         { type: "CodingDashboard" },
+        { type: "Team" },
+        { type: "Cohorts", id: "LIST" },
       ],
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         await notifyOnSettle(dispatch, queryFulfilled);
@@ -58,6 +60,8 @@ export const kaironApi = apiSlice.injectEndpoints({
         { type: "KaironAnalystReviews", id: "LIST" },
         { type: "KaironChartRecords", id: "LIST" },
         { type: "CodingDashboard" },
+        { type: "Team" },
+        { type: "Cohorts", id: "LIST" },
       ],
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         await notifyOnSettle(dispatch, queryFulfilled);

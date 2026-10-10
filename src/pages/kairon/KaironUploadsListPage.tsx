@@ -38,7 +38,7 @@ export function KaironUploadsListPage() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-content-primary">Kairon uploads</h1>
+          <h1 data-metric="kairon" className="metric-label text-lg font-semibold text-content-primary">Kairon uploads</h1>
           <p className="text-sm text-content-muted">
             Every batch ever uploaded, and any coding-analyst names waiting on manual review.
           </p>

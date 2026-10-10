@@ -54,7 +54,7 @@ export function KaironRecordsListPage() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-content-primary">Kairon chart records</h1>
+          <h1 data-metric="kairon" className="metric-label text-lg font-semibold text-content-primary">Kairon chart records</h1>
           <p className="text-sm text-content-muted">The per-chart coding/QA ledger pulled from Kairon exports.</p>
         </div>
         <div className="flex gap-2">

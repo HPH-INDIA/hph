@@ -1,3 +1,6 @@
+import { metricTotals } from "./metricTotals";
+import type { CoderMetrics } from "@/api/coderPerformance";
+import { adjustedTargetCpd } from "./adjustedTargetMetrics";
 import type { DailyEfficiency } from "@/api/types";
 import type { CoderPerformanceMember } from "@/api/coderPerformance";
 
@@ -26,17 +29,7 @@ export function dayLabel(day: string, showYear = false) {
   });
 }
 
-export function numberLabel(value: number | string | null | undefined, decimals = 0) {
-  if (value == null || !Number.isFinite(Number(value))) return "—";
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: decimals, maximumFractionDigits: decimals,
-  }).format(Number(value));
-}
-
-export function chartLabel(value: number | string | null | undefined) {
-  if (value == null || !Number.isFinite(Number(value))) return "—";
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(Number(value));
-}
+export { displayNumber as numberLabel, displayNumber as chartLabel } from "@/utils/displayNumber";
 
 export function filterDays(rows: DailyEfficiency[], filter: PerformanceFilter, search: string, oldestFirst: boolean) {
   const term = search.trim().toLowerCase();
@@ -52,24 +45,35 @@ export function filterDays(rows: DailyEfficiency[], filter: PerformanceFilter, s
   }).sort((a, b) => oldestFirst ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date));
 }
 
+/** Numeric CSV cells are always numbers; unavailable metrics export as zero.
+ * Round only at serialization so aggregate rates retain their precision. */
+function csvMetric(value: unknown, decimals = 0): number {
+  const number = value == null || value === "" ? 0 : Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Number(number.toFixed(decimals));
+}
+function csvMetrics(metrics: CoderMetrics | null, daily?: DailyEfficiency[]) {
+  return [csvMetric(metrics?.kaironCharts), csvMetric(metrics?.manualCharts), csvMetric(metrics?.adjustedCpd),
+    csvMetric(adjustedTargetCpd(metrics, daily), 2), csvMetric(metrics?.kaironCpd, 2),
+    csvMetric(metrics?.manualCpd, 2), csvMetric(metrics?.targetCpd, 2),
+    csvMetric(metrics?.kaironEfficiencyPercent), csvMetric(metrics?.manualEfficiencyPercent)];
+}
+const metricHeaders = ["Kairon charts completed", "Manual charts completed", "Adjusted Targets", "Adjusted Target CPD",
+  "Kairon CPD", "Manual CPD", "Target CPD", "Kairon efficiency (%)", "Manual efficiency (%)"];
+
 export function dailyCsv(rows: DailyEfficiency[]) {
-  const headers = ["Date", "Stage", "Manual charts completed", "Kairon charts completed", "Adjusted target CPD",
-    "Manual CPD", "Kairon CPD", "Target CPD", "Manual efficiency (%)", "Kairon efficiency (%)"];
-  const body = rows.map((row) => [row.date, row.stage, row.manualCharts, row.kaironCharts,
-    row.adjustedCpd, row.manualCpd, row.kaironCpd, row.targetCpd,
-    row.manualEfficiencyPercent, row.kaironEfficiencyPercent]);
-  return [headers, ...body].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  const headers = ["Date", "Stage", ...metricHeaders];
+  const body = rows.map(row => [row.date, row.stage ?? "Unassigned", ...csvMetrics(row)]);
+  if (rows.length) body.push(["Total", "All matching records", ...csvMetrics(metricTotals(rows))]);
+  return [headers, ...body].map(row => row.map(csvCell).join(",")).join("\r\n");
 }
 
 export function memberCsv(members: CoderPerformanceMember[], nameLabel: "Coder" | "Lead" = "Coder") {
-  const headers = [nameLabel, "Manual charts completed", "Kairon charts completed", "Adjusted target CPD", "Manual CPD", "Kairon CPD",
-    "Target CPD", "Manual efficiency (%)", "Kairon efficiency (%)"];
-  const body = members.map(({ name, efficiency }) => [name,
-    efficiency?.manualCharts ?? 0, efficiency?.kaironCharts ?? 0,
-    efficiency?.adjustedCpd,
-    efficiency?.manualCpd, efficiency?.kaironCpd, efficiency?.targetCpd,
-    efficiency?.manualEfficiencyPercent, efficiency?.kaironEfficiencyPercent]);
-  return [headers, ...body].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  const headers = [nameLabel, ...metricHeaders];
+  const body = members.map(({name, efficiency, daily}) => [name, ...csvMetrics(efficiency, daily)]);
+  if (members.length) body.push(["Total", ...csvMetrics(metricTotals(members.map(member => member.efficiency
+    ? {...member.efficiency, ...(member.daily ? {daily:member.daily} : {})} : null)))]);
+  return [headers, ...body].map(row => row.map(csvCell).join(",")).join("\r\n");
 }
 
 function csvCell(value: unknown) {

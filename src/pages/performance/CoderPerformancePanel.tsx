@@ -5,7 +5,8 @@ import { ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { CoderPerformanceTable } from "./CoderPerformanceTable";
 import { DailyPerformance } from "./DailyPerformance";
 
-export function CoderPerformancePanel({ members, loading, error, onRetry, rows, from, to, periodLabel, onPick, renderDayDetails, exportName }: {
+export function CoderPerformancePanel({ members, loading, error, onRetry, rows, from, to, periodLabel, onPick, renderDayDetails, exportName, compact = false, activeView }: {
+  compact?: boolean; activeView?: "coder" | "day";
   members: CoderPerformanceMember[];
   loading?: boolean;
   error?: string;
@@ -19,9 +20,10 @@ export function CoderPerformancePanel({ members, loading, error, onRetry, rows, 
   exportName: string;
 }) {
   const id = useId();
-  const [view, setView] = useState<"coder" | "day">("day");
+  const [localView, setView] = useState<"coder" | "day">("coder");
+  const view = activeView ?? localView;
   return <section aria-labelledby={`${id}-title`} className="min-w-0 overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-    <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-5">
+    {compact ? <h2 id={`${id}-title`} className="sr-only">Coder performance</h2> : <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-3">
       <div><h2 id={`${id}-title`} className="text-base font-semibold">Coder performance</h2><p className="mt-1 text-xs text-content-secondary">{periodLabel} · Compare coders or explore a day’s results.</p></div>
       <div role="tablist" aria-label="Coder performance views" className="inline-flex rounded-lg bg-surface-muted p-1">
         {(["coder", "day"] as const).map((tab) => <button key={tab} type="button" role="tab" id={`${id}-${tab}`} aria-controls={`${id}-panel`} aria-selected={view === tab} tabIndex={view === tab ? 0 : -1}
@@ -36,11 +38,11 @@ export function CoderPerformancePanel({ members, loading, error, onRetry, rows, 
           {tab === "coder" ? "By coder" : "By day"}
         </button>)}
       </div>
-    </div>
-    <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${view}`}>
+    </div>}
+    <div id={`${id}-panel`} role={compact ? "region" : "tabpanel"} aria-labelledby={compact ? `${id}-title` : `${id}-${view}`}>
       {view === "coder" ? <div className="border-t border-border">
-        {error ? <ErrorState message={error} onRetry={onRetry} /> : loading ? <LoadingState label="Loading coder results…" /> : <CoderPerformanceTable members={members} caption={`Coder totals · ${periodLabel}`} onPick={onPick} exportName={`${exportName}-by-coder`} />}
-      </div> : <DailyPerformance key={`${from}-${to}`} rows={rows} month={from.slice(0, 7)} periodLabel={periodLabel} title="Combined coder daily performance"
+        {error ? <ErrorState message={error} onRetry={onRetry} /> : loading ? <LoadingState label="Loading coder results…" /> : <CoderPerformanceTable paginate={false} enableEfficiencyFilters members={members} caption={`Coder totals · ${periodLabel}`} onPick={onPick} exportName={`${exportName}-by-coder`} />}
+      </div> : <DailyPerformance paginate={false} key={`${from}-${to}`} rows={rows} month={from.slice(0, 7)} periodLabel={periodLabel} title="Combined coder daily performance"
         description="Select a day to see each coder’s charts, CPD, and efficiency. Coders with no records are included."
         exportName={exportName} showYear renderDayDetails={renderDayDetails} embedded />}
     </div>

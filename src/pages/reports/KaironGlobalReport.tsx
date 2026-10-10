@@ -8,7 +8,7 @@ import {
 } from "@/api/reportsApi";
 import type { KaironCompletedUserSummary } from "@/api/types";
 import { Button } from "@/components/ui/Button";
-import { Drawer } from "@/components/ui/Drawer";
+import { ActionScreen } from "@/components/ui/ActionScreen";
 import { inputClasses } from "@/components/ui/FormField";
 import { PaginationControls } from "@/components/ui/PaginationControls";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
@@ -109,7 +109,7 @@ export function KaironGlobalReport({ window }: { window: ManualReportWindow }) {
         {canUpload && <Button onClick={() => setShowUpload(true)}>Upload Kairon file</Button>}
       </div>
 
-      <Drawer
+      <ActionScreen
         open={showUpload && canUpload}
         onClose={() => setShowUpload(false)}
         title="Upload Kairon file"
@@ -121,9 +121,9 @@ export function KaironGlobalReport({ window }: { window: ManualReportWindow }) {
           onCancel={() => setShowUpload(false)}
           onStarted={() => setShowUpload(false)}
         />
-      </Drawer>
+      </ActionScreen>
 
-      <Drawer
+      <ActionScreen
         open={selectedDate !== null}
         onClose={closeDetails}
         title={`Completed charts — ${selectedDate ?? ""}`}
@@ -270,7 +270,7 @@ export function KaironGlobalReport({ window }: { window: ManualReportWindow }) {
             </>
           )}
         </div>
-      </Drawer>
+      </ActionScreen>
 
       {isLoading && <LoadingState label="Loading completed chart counts…" />}
       {isError && <ErrorState message="Couldn't load completed chart counts." onRetry={refetch} />}

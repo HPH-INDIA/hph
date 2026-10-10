@@ -1,34 +1,33 @@
-import { SortableHeader } from "@/components/ui/SortableHeader";
-import { sortTableRows, type TableSort } from "@/components/ui/tableSort";
-import { coderColumns } from "./performanceColumns";
-import { useId, useRef, useState } from "react";
+import { averageAdjustedTargets } from "./adjustedTargetMetrics";
+import { UserDetailsScreen, type DetailPerson } from "./UserDetailsScreen";
+import { ReportGraphs } from "@/pages/reports/ReportGraphs";
+import { PerformanceTabs } from "./PerformanceTabs";
+import { CoderPerformanceTable } from "./CoderPerformanceTable";
+import { useState, type ReactNode } from "react";
 
 import { getErrorMessage } from "@/api/apiError";
-import { useGetManagerDashboardQuery } from "@/api/reportsApi";
+import { useGetManagerDashboardQuery, useGetManagerCoderSelectionQuery, useGetManualTeamRangeQuery } from "@/api/reportsApi";
 import type { LeadPerformanceSection, ManagerDashboardQuery, ManagerDashboardSummary, ManagerPerformanceMember } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
+import { SearchableMultiSelect } from "@/components/ui/SearchableMultiSelect";
+import { selectManagerTeams, selectManagerCoders } from "./managerTeamSelection";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { useAuth } from "@/features/auth/useAuth";
 
 import { DailyPerformance } from "./DailyPerformance";
-import { EfficiencyValue } from "./EfficiencyValue";
 import { PerformanceSummary } from "./PerformanceSummary";
 import { TeamOverview } from "./TeamOverview";
-import { CoderPerformancePanel } from "./CoderPerformancePanel";
 import { ManagerCoderDay } from "./ManagerCoderDay";
 import { PeriodGoalCard } from "./PeriodGoalCard";
 import { ReportingPeriodFields, performanceInputClass } from "./ReportingPeriodFields";
 import { dateRangeLabel, leadPeriodLabel, loadLeadFilters, localDayValue, saveLeadFilters } from "./leadFilters";
 import { changeManagerScope, defaultManagerFilters, managerDashboardQuery, managerFilterError, matchingCoders, type ManagerFilters, type ManagerView } from "./managerFilters";
-import { numberLabel } from "./performanceView";
-import { MemberPerformanceExport } from "./MemberPerformanceExport";
 
 const views: { value: ManagerView; label: string; description: string }[] = [
-  { value: "teams", label: "Teams by lead", description: "Explore each lead’s QA and coder performance." },
-  { value: "coders", label: "Only coders", description: "Combined coder results across the selected teams." },
-  { value: "leads", label: "Only leads", description: "QA performance across the selected leads." },
-  { value: "both", label: "Both", description: "All selected teams, with separate QA and coder totals." },
+  { value: "teams", label: "Overview", description: "Explore each lead’s QA and coder performance." },
+  { value: "coders", label: "Coders", description: "All coders across teams, shown together." },
+  { value: "leads", label: "QA", description: "All QA leads across teams, shown together." },
 ];
 type Options = Pick<ManagerDashboardSummary, "leadOptions" | "coderOptions" | "cohortOptions">;
 const emptyOptions: Options = { leadOptions: [], coderOptions: [], cohortOptions: [] };
@@ -58,15 +57,25 @@ interface ManagerDashboardViewProps {
 }
 
 export function ManagerDashboardView({ today, filters, onFiltersChange, data, options, loading, error, onRetry }: ManagerDashboardViewProps) {
+  const [detailPerson, setDetailPerson] = useState<DetailPerson | null>(null);
   const [view, setView] = useState<ManagerView>("teams");
   const [draftView, setDraftView] = useState<ManagerView>("teams");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draft, setDraft] = useState(filters);
-  const [selectedTeamKey, setSelectedTeamKey] = useState<string | null>(null);
-  const tabsId = useId();
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const [teamScope, setTeamScope] = useState<"qa" | "coders">("coders");
+  const [selectedTeamKeys, setSelectedTeamKeys] = useState<string[] | null>(null);
   const teams = data?.teams ?? [];
-  const team = teams.find((item) => item.key === selectedTeamKey) ?? teams[0];
+  const selectedKeys = selectedTeamKeys === null ? teams.slice(0, 1).map((team) => team.key) : selectedTeamKeys.filter((key) => teams.some((team) => team.key === key));
+  const teamData = data ? view === "teams" ? selectManagerTeams(data, selectedKeys) : data : undefined;
+  const [inlineCoderIds, setInlineCoderIds] = useState<string[] | null>(null);
+  const teamCoders = (teamData?.members ?? []).filter(member => member.roleType === "employee");
+  const coderIds = teamCoders.map(member => String(member.userId));
+  const selectedCoderIds = inlineCoderIds === null ? coderIds : inlineCoderIds.filter(id => coderIds.includes(id));
+  const hasCoderSelection = view === "teams" && teamScope === "coders" && selectedCoderIds.length !== coderIds.length;
+  const inlineScope = managerDashboardQuery(filters, today);
+  const coderDetails = useGetManagerCoderSelectionQuery({scope: inlineScope, coderIds: selectedCoderIds.map(Number).sort((a,b) => a-b)}, {skip: !hasCoderSelection || selectedCoderIds.length === 0});
+  const selectedData = !hasCoderSelection ? teamData : teamData && (selectedCoderIds.length === 0 ? selectManagerCoders(teamData, []) : coderDetails.currentData ? selectManagerCoders(teamData, coderDetails.currentData) : undefined);
+  const selectedTeamLabel = teamData?.teams.length === 1 ? teamData.teams[0].lead?.name ?? "Unassigned" : `${selectedKeys.length} selected teams`;
   const period = leadPeriodLabel(filters, today);
   const availableCoders = matchingCoders(options.coderOptions, draft);
   const draftError = managerFilterError(draft, today);
@@ -77,37 +86,53 @@ export function ManagerDashboardView({ today, filters, onFiltersChange, data, op
   const cohortName = options.cohortOptions.find((cohort) => cohort.id === filters.cohortId)?.label;
   const filterCount = Number(filters.dateMode !== "month" || filters.month !== today.slice(0, 7)) + Number(filters.leadId !== "ALL") + Number(filters.coderId !== "ALL") + Number(filters.cohortId !== "ALL") + Number(filters.program !== "ALL") + Number(view !== "teams");
   const monthly = filters.dateMode === "month";
-  const pickMember = (member: ManagerPerformanceMember) => {
-    setSelectedTeamKey(null);
-    onFiltersChange({ ...filters, coderId: member.roleType === "employee" ? member.userId : "ALL", leadId: member.leadId ?? "ALL" });
+  const peopleFiltered = filters.leadId !== "ALL" || filters.coderId !== "ALL" || filters.cohortId !== "ALL";
+  const changeView = (next: ManagerView) => {
+    setView(next);
+    // Team exploration belongs to Overview. Entering a people-wide tab starts
+    // with everyone, while retaining the reporting period and program.
+    if (next !== "teams" && next !== view) {
+      onFiltersChange({ ...filters, leadId: "ALL", coderId: "ALL", cohortId: "ALL" });
+    }
   };
-  const performanceSection = (section: LeadPerformanceSection, role: "lead" | "employee", title: string, context: string, teamId?: number | null) => <ManagerSection
-    key={`${role}-${teamId ?? "all"}-${data?.from}-${data?.to}-${filters.coderId}-${filters.cohortId}-${filters.program}`}
-    title={title} context={context} section={section} monthly={monthly} role={role}
-    members={(data?.members ?? []).filter((member) => member.roleType === role && (teamId === undefined || (teamId === null ? !member.leadId : member.leadId === teamId)))}
-    onPickMember={pickMember} scope={{ ...managerDashboardQuery(filters, today), ...(teamId != null ? { leadId: teamId } : {}) }} />;
+  const pickMember = (member: ManagerPerformanceMember) => {
+    setDetailPerson({ ...member, leadName: member.roleType === "employee" ? options.leadOptions.find(lead => lead.userId === member.leadId)?.name : undefined });
+  };
+  const performanceSection = (section: LeadPerformanceSection, role: "lead" | "employee", title: string, context: string, toolbar?: ReactNode) => <ManagerSection
+    key={`${view}-${role}-${data?.from}-${data?.to}-${filters.coderId}-${filters.cohortId}-${filters.program}`}
+    title={title} context={context} section={section} monthly={monthly} role={role} toolbar={toolbar} paginate={view === "teams"}
+    members={(selectedData?.members ?? []).filter((member) => member.roleType === role)}
+    onPickMember={pickMember} scope={inlineScope} />;
 
-  return <div className="mx-auto flex min-w-0 max-w-screen-2xl flex-col gap-5 text-content-primary">
-    <header className="flex flex-wrap items-end justify-between gap-4">
-      <div><p className="text-xs font-semibold uppercase tracking-widest text-brand-600">Manager workspace</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Team performance</h1>
-        <p className="mt-2 text-sm text-content-secondary">Your leads, their QA work, and the coders they support.</p></div>
+  const teamControls = <>
+    <SearchableMultiSelect label="Lead / team" value={selectedKeys} onChange={(keys) => { setSelectedTeamKeys(keys); setInlineCoderIds(null); }}
+      options={teams.map((item) => ({ value: item.key, label: item.lead?.name ?? "Unassigned", detail: `${item.coders.goal.userCount} coders` }))} />
+    <SearchableMultiSelect label="Coders" noun="coders" value={selectedCoderIds}
+      onChange={(ids) => { setInlineCoderIds(ids); setTeamScope("coders"); }}
+      options={teamCoders.map(member => ({value: String(member.userId), label: member.name}))} />
+    {view === "teams" && <PerformanceTabs value={teamScope} onChange={setTeamScope} items={[{ value: "qa", label: "QA" }, { value: "coders", label: "Coders" }]} label="Selected team scope" compact />}
+  </>;
+  return <div className="mx-auto flex min-w-0 max-w-screen-2xl flex-col gap-3 text-content-primary">
+    {detailPerson && <UserDetailsScreen key={detailPerson.userId} person={detailPerson} initialFilters={filters} onClose={() => setDetailPerson(null)} />}
+    <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <h1 className="sr-only">Team performance</h1>
+      <PerformanceTabs value={view} onChange={changeView} items={views} label="Performance scope" />
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-medium text-brand-800">{period}</span>
         <Button variant="secondary" onClick={() => { setDraft(filters); setDraftView(view); setFiltersOpen(true); }}>Filters{filterCount ? ` (${filterCount})` : ""}</Button>
       </div>
     </header>
 
-    <div className="flex flex-wrap items-center gap-2 text-xs text-content-secondary" aria-label="Active dashboard filters">
+    {(leadName || coderName || cohortName || filters.program !== "ALL") && <div className="flex flex-wrap items-center gap-2 text-xs text-content-secondary" aria-label="Active dashboard filters">
       <span className="font-medium text-content-primary">Showing</span>
       {[views.find((item) => item.value === view)?.label, leadName ?? (selectedCoder ? "Unassigned coders" : "All teams"), coderName, cohortName, filters.program === "ALL" ? null : filters.program].filter(Boolean).map((label) => <span key={label} className="rounded-full border border-border bg-surface px-2.5 py-1">{label}</span>)}
-      {filterCount > 0 && <button className="rounded px-2 py-1 font-medium text-brand-700 underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-brand-500" onClick={() => { onFiltersChange(defaultManagerFilters(today)); setView("teams"); setSelectedTeamKey(null); }}>Reset filters</button>}
-    </div>
+      {filterCount > 0 && <button className="rounded px-2 py-1 font-medium text-brand-700 underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-brand-500" onClick={() => { onFiltersChange(defaultManagerFilters(today)); setView("teams"); setSelectedTeamKeys(null); }}>Reset filters</button>}
+    </div>}
     {filters.coderId !== "ALL" && <p className="text-xs text-content-secondary">Coder results show {coderName ?? "the selected coder"}. {selectedCoder?.leadId ? "QA results show their lead’s own records." : "No lead is assigned to this coder."}</p>}
     {filters.program !== "ALL" && <p className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-xs text-brand-800">Showing {filters.program} charts. Targets and recorded hours cover all programs.</p>}
 
     <Drawer open={filtersOpen} onClose={() => setFiltersOpen(false)} title="Manager dashboard filters" description="Choose the reporting period and people to include." widthClass="max-w-md">
-      <form className="flex min-h-full flex-col gap-5" onSubmit={(event) => { event.preventDefault(); if (!draftError) { onFiltersChange(draft); setView(draftView); setSelectedTeamKey(null); setFiltersOpen(false); } }}>
+      <form className="flex min-h-full flex-col gap-5" onSubmit={(event) => { event.preventDefault(); if (!draftError) { onFiltersChange(draft); setView(draftView); setSelectedTeamKeys(null); setFiltersOpen(false); } }}>
         <div className="space-y-2">
           <Select label="Dashboard view" value={draftView} onChange={(value) => setDraftView(value as ManagerView)}>
             {views.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
@@ -136,37 +161,17 @@ export function ManagerDashboardView({ today, filters, onFiltersChange, data, op
     </Drawer>
 
     {error && <ErrorState message={error} onRetry={onRetry} />}
-    {loading ? <LoadingState label="Loading team performance…" /> : !error && data ? <>
-      <TeamOverview summary={view === "coders" ? data.coders.efficiency : view === "leads" ? data.qa.efficiency : data.overall}
+    {loading ? <LoadingState label="Loading team performance…" /> : !error && data && teamData ? <>
+      <TeamOverview showRates summary={view === "coders" ? data.coders.efficiency : view === "leads" ? data.qa.efficiency : data.overall}
         people={view === "coders" ? data.coders.goal.userCount : view === "leads" ? data.qa.goal.userCount : data.qa.goal.userCount + data.coders.goal.userCount}
-        scope={view === "coders" ? "Selected coders" : view === "leads" ? "Selected QA leads" : "Selected teams · QA + coders"} />
-      {teams.length === 0 ? <EmptyState title="No people match these filters" description="Choose another team, cohort, or reporting period to see performance." /> : view === "teams" && team ? <section className="min-w-0 rounded-lg border border-border bg-surface p-3 shadow-sm sm:p-5" aria-label="Performance by lead">
-        <div role="tablist" aria-label="Lead teams" className="flex gap-1 overflow-x-auto border-b border-border pb-2">
-          {teams.map((item, index) => <button key={item.key} ref={(element) => { tabRefs.current[index] = element; }} id={`${tabsId}-${item.key}`} role="tab" type="button"
-            aria-selected={team.key === item.key} aria-controls={`${tabsId}-panel`} tabIndex={team.key === item.key ? 0 : -1}
-            onClick={() => setSelectedTeamKey(item.key)} onKeyDown={(event) => {
-              const target = event.key === "ArrowRight" ? (index + 1) % teams.length : event.key === "ArrowLeft" ? (index - 1 + teams.length) % teams.length : event.key === "Home" ? 0 : event.key === "End" ? teams.length - 1 : null;
-              if (target !== null) { event.preventDefault(); setSelectedTeamKey(teams[target].key); tabRefs.current[target]?.focus(); }
-            }} className={`flex shrink-0 items-center gap-2 rounded-md px-4 py-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 ${team.key === item.key ? "bg-brand-50 text-brand-700" : "text-content-secondary hover:bg-surface-muted"}`}>
-            {item.lead?.name ?? "Unassigned"}<span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs tabular-nums">{item.coders.goal.userCount}</span>
-          </button>)}
-        </div>
-        <div id={`${tabsId}-panel`} role="tabpanel" aria-labelledby={`${tabsId}-${team.key}`} className="flex min-w-0 flex-col gap-6 pt-5">
-          <div><h2 className="text-lg font-semibold">{team.lead ? `${team.lead.name}’s team` : "Unassigned coders"}</h2><p className="mt-1 text-xs text-content-secondary">{team.coders.goal.userCount} {team.coders.goal.userCount === 1 ? "coder" : "coders"} in this selection · {dateRangeLabel(data.from, data.to)}</p></div>
-          {performanceSection(team.qa, "lead", "QA section", team.lead?.name ?? "No lead assigned", team.lead?.userId ?? null)}
-          {performanceSection(team.coders, "employee", "Coders section", coderName ?? "All coders in this team", team.lead?.userId ?? null)}
-        </div>
-      </section> : <div className="flex min-w-0 flex-col gap-6">
-        {view !== "coders" && performanceSection(data.qa, "lead", "QA section", "Combined performance of the selected leads")}
-        {view !== "leads" && performanceSection(data.coders, "employee", "Coders section", coderName ?? "Combined performance of the selected coders")}
-      </div>}
-      <details className="rounded-lg border border-border bg-surface px-5 py-4 text-xs leading-relaxed text-content-secondary">
-        <summary className="cursor-pointer text-sm font-medium focus-visible:ring-2 focus-visible:ring-brand-500">How manager totals work</summary>
-        <div className="mt-3 grid gap-3 md:grid-cols-2"><p>QA includes the leads’ own records. Coder totals include their reporting coders. The two sections keep their goals, chart counts, CPD, and efficiency separate. A coder selection narrows the dashboard to that coder and their lead’s QA.</p>
-          <p>Chart counts and saved adjusted targets are added. CPD and efficiency use combined source hours and targets; efficiency is capped at 120%. Adjusted target CPD uses saved manual records, with no deduction for Huddle meetings.</p>
-          <p>Month mode uses full-month goals. Other date modes use the selected dates. Goals exclude weekends, office holidays, and full-leave days. Program selection filters completed charts; stage targets and recorded hours remain shared across programs.</p>
-          <p>Team membership follows current reporting assignments. Inactive people remain available for periods through their last working day. A dash means no value is available.</p></div>
-      </details>
+        scope={view === "coders" ? peopleFiltered ? "Filtered coders" : "All coders" : view === "leads" ? peopleFiltered ? "Filtered QA leads" : "All QA leads" : peopleFiltered ? "Filtered people · QA + coders" : "Everyone · QA + coders"} />
+      {hasCoderSelection && (!selectedData || (selectedCoderIds.length > 0 && coderDetails.error)) && <div className="flex flex-wrap items-center gap-3">{teamControls}</div>}
+      {hasCoderSelection && selectedCoderIds.length > 0 && coderDetails.error ? <ErrorState message={getErrorMessage(coderDetails.error)} onRetry={coderDetails.refetch} /> : !selectedData ? <LoadingState label="Loading coder performance…" /> : teams.length === 0 ? <EmptyState title="No people match these filters" description="Choose another team, cohort, or reporting period to see performance." /> : view === "teams"
+        ? teamScope === "qa" ? performanceSection(selectedData.qa, "lead", "QA performance", selectedTeamLabel, teamControls)
+          : performanceSection(selectedData.coders, "employee", "Coder performance", coderName ?? selectedTeamLabel, teamControls)
+        : view === "leads" ? performanceSection(selectedData.qa, "lead", "QA performance", peopleFiltered ? "Filtered QA leads" : "All QA leads across teams")
+          : performanceSection(selectedData.coders, "employee", "Coder performance", coderName ?? (peopleFiltered ? "Filtered coders" : "All coders across teams"))}
+
     </> : null}
   </div>;
 }
@@ -176,54 +181,36 @@ function Select({ label, value, onChange, children }: { label: string; value: st
   return <label className="flex flex-col gap-1.5 text-xs font-medium text-content-secondary">{label}<select className={performanceInputClass} value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>;
 }
 
-function ManagerSection({ title, context, section, monthly, members, role, onPickMember, scope }: {
+function ManagerSection({ title, context, section, monthly, members, role, onPickMember, scope, toolbar, paginate }: {
   title: string; context: string; section: LeadPerformanceSection; monthly: boolean;
   members: ManagerPerformanceMember[]; role: "lead" | "employee"; onPickMember: (member: ManagerPerformanceMember) => void;
-  scope: ManagerDashboardQuery;
+  scope: ManagerDashboardQuery; toolbar?: ReactNode; paginate: boolean;
 }) {
-  const id = useId();
-  const pickCoder = (userId: number) => {
-    const member = members.find((item) => item.userId === userId);
-    if (member) onPickMember(member);
-  };
-  return <section aria-labelledby={id} className="flex min-w-0 flex-col gap-3">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 id={id} className="text-base font-semibold">{title}</h3><p className="mt-1 text-xs text-content-secondary">{context}</p></div><span className={`rounded-full px-3 py-1 text-xs font-medium ${role === "lead" ? "bg-brand-100 text-brand-800" : "bg-surface-muted text-content-secondary"}`}>{section.goal.userCount} {role === "lead" ? (section.goal.userCount === 1 ? "QA lead" : "QA leads") : (section.goal.userCount === 1 ? "coder" : "coders")}</span></div>
-    {section.goal.userCount === 0 ? <EmptyState title={role === "lead" ? "No QA in this selection" : "No coders in this selection"} description="Adjust the filters to include more people." /> : <>
+  const [panel, setPanel] = useState<"records" | "summary" | "trends" | "daily">("records");
+  const { user } = useAuth();
+  const manual = useGetManualTeamRangeQuery({ fromDate: section.efficiency.from, toDate: section.efficiency.to, viewerId: user?.id ?? 0, viewerRole: user?.role.roleType ?? null }, { skip: !user });
+  const entries = (manual.currentData?.teams ?? []).flatMap(team => [...team.coders, ...(team.lead ? [{ user: team.lead, records: team.leadRecords }] : [])]);
+  const enrichedMembers = members.map(member => ({ ...member, efficiency: { ...member.efficiency,
+    adjustedDailyAverage: averageAdjustedTargets(entries.find(entry => entry.user.id === member.userId)?.records ?? []),
+    adjustedRecordedDays: manual.currentData ? (entries.find(entry => entry.user.id === member.userId)?.records ?? []).filter(record => record.adjustedCpd != null).length : undefined,
+  } }));
+  const selectedIds = new Set(members.map(member => member.userId));
+  const selectedRecords = entries.filter(entry => selectedIds.has(entry.user.id)).flatMap(entry => entry.records);
+  const dailyRows = section.efficiency.daily.map(day => ({ ...day, adjustedRecordedDays: manual.currentData ? selectedRecords.filter(record => record.date === day.date && record.adjustedCpd != null).length : undefined, adjustedDailyAverage: averageAdjustedTargets(selectedRecords.filter(record => record.date === day.date)) }));
+  const pickMember = (userId: number) => { const member = members.find((item) => item.userId === userId); if (member) onPickMember(member); };
+  return <section aria-label={`${title} · ${context}`} className="flex min-w-0 flex-col gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">{toolbar ?? <p className="text-sm font-medium">{context} <span className="text-xs font-normal text-content-secondary">· {section.goal.userCount} people</span></p>}</div>
+      <PerformanceTabs value={panel} onChange={setPanel} items={[{ value: "records", label: "People" }, { value: "daily", label: "Daily" }, { value: "summary", label: "Goal & rates" }, { value: "trends", label: "Trends" }]} label={`${title} view`} compact />
+    </div>
+    {manual.isFetching && <p role="status" className="text-xs text-content-muted">Loading per-day adjusted targets…</p>}
+    {manual.isError && <p role="alert" className="text-xs text-danger">Adjusted Target CPD is unavailable. <button className="underline" onClick={() => manual.refetch()}>Retry</button></p>}
+    {section.goal.userCount === 0 ? <EmptyState title={role === "lead" ? "No QA in this selection" : "No coders in this selection"} description="Select one or more teams, or adjust the filters to include more people." /> : panel === "summary" ? <>
       <PeriodGoalCard goal={section.goal} monthly={monthly} label={role === "lead" ? "QA goal" : "Coder goal"} />
       <PerformanceSummary summary={section.efficiency} label={`${title} performance summary`} />
-      {role === "employee" ? <CoderPerformancePanel key={JSON.stringify(scope)} members={members} rows={section.efficiency.daily}
-        from={section.efficiency.from} to={section.efficiency.to} periodLabel={dateRangeLabel(section.efficiency.from, section.efficiency.to)} onPick={pickCoder}
-        exportName={`manager-coders-${section.efficiency.from}-to-${section.efficiency.to}`}
-        renderDayDetails={(date) => <ManagerCoderDay date={date} scope={scope} members={members} onPick={pickCoder} />} /> : <>
-      <MemberTable members={members} role={role} onPick={onPickMember}
-        exportName={`manager-qa-${members.length === 1 ? members[0].userId : "combined"}-${section.efficiency.from}-to-${section.efficiency.to}-by-lead`} />
-      <details className="group min-w-0 rounded-lg border border-border bg-surface">
-        <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg px-5 py-3 text-sm font-medium focus-visible:ring-2 focus-visible:ring-brand-500 [&::-webkit-details-marker]:hidden">{role === "lead" ? "QA" : "Coder"} daily performance<span className="text-lg group-open:rotate-45" aria-hidden="true">+</span></summary>
-        <DailyPerformance rows={section.efficiency.daily} month={section.efficiency.from.slice(0, 7)} periodLabel={dateRangeLabel(section.efficiency.from, section.efficiency.to)} title={`${title} · daily totals`} description="Daily chart counts, saved adjusted targets, CPD, and efficiency." exportName={`manager-${role}-${members.length === 1 ? members[0].userId : "combined"}-${section.efficiency.from}-to-${section.efficiency.to}`} showYear />
-      </details>
-      </>}
-    </>}
+    </> : panel === "trends" ? <ReportGraphs targetRecords={selectedRecords} sources={[section.efficiency.daily]} from={section.efficiency.from} to={section.efficiency.to} teamView />
+      : panel === "daily" ? <DailyPerformance paginate={paginate} rows={dailyRows} month={section.efficiency.from.slice(0, 7)} periodLabel={dateRangeLabel(section.efficiency.from, section.efficiency.to)} title={`${title} · daily totals`} exportName={`manager-${role}-${section.efficiency.from}-to-${section.efficiency.to}`} showYear
+        renderDayDetails={role === "employee" ? (date) => <ManagerCoderDay paginate={paginate} date={date} scope={scope} members={members} onPick={pickMember} /> : undefined} />
+      : <div className="overflow-hidden rounded-xl border border-border bg-surface"><CoderPerformanceTable showUserSelector={!toolbar} paginate={false} enableEfficiencyFilters members={enrichedMembers} nameLabel={role === "lead" ? "Lead" : "Coder"} caption={`${title} · ${context}`} onPick={pickMember} exportName={`manager-${role}-${section.efficiency.from}-to-${section.efficiency.to}`} /></div>}
   </section>;
-}
-function MemberTable({ members, role, onPick, exportName }: { members: ManagerPerformanceMember[]; role: "lead" | "employee"; onPick: (member: ManagerPerformanceMember) => void; exportName: string }) {
-  const [sort, setSort] = useState<TableSort>({ key: "name", direction: "asc" });
-  const columns = coderColumns.map((column) => column.key === "name" ? { ...column, label: role === "lead" ? "Lead" : "Coder" } : column);
-  const sortedMembers = sortTableRows(members, columns, sort);
-  return <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-surface">
-    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-      <div><h4 className="text-sm font-semibold">{role === "lead" ? "QA" : "Coder"} performance</h4><p className="mt-1 text-xs text-content-secondary">Totals for the selected period.</p></div>
-      <MemberPerformanceExport members={sortedMembers} exportName={exportName} nameLabel={role === "lead" ? "Lead" : "Coder"} />
-    </div>
-    <div className="min-w-0 overflow-x-auto" tabIndex={0} role="region" aria-label={role === "lead" ? "Lead performance table" : "Coder performance table"}>
-    <table className="w-full min-w-[1120px] text-left text-sm">
-      <caption className="sr-only">{role === "lead" ? "QA lead" : "Coder"} results for the selected period. Select a name to filter the dashboard.</caption>
-      <thead className="bg-surface-muted text-xs text-content-secondary"><tr>{columns.map((column, index) => <SortableHeader key={column.key} column={column} sort={sort} onSort={setSort} align={index ? "right" : "left"} className={`px-4 py-3 font-medium ${column.key === "adjustedCpd" ? "bg-brand-50 text-brand-600" : ""}`} />)}</tr></thead>
-      <tbody className="divide-y divide-border">{sortedMembers.map((member) => <tr key={member.userId} className="hover:bg-brand-50/50">
-        <th scope="row" className="px-4 py-3 font-normal"><button onClick={() => onPick(member)} className="rounded text-left font-medium text-brand-700 underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-brand-500">{member.name}</button>{!member.isActive && <div className="mt-1 text-xs text-content-secondary">Inactive</div>}</th>
-        {[member.efficiency.manualCharts, member.efficiency.kaironCharts, member.efficiency.adjustedCpd, member.efficiency.manualCpd, member.efficiency.kaironCpd, member.efficiency.targetCpd].map((value, index) => <td key={index} className={`px-4 py-3 text-right tabular-nums ${index === 2 ? "bg-brand-50 font-semibold text-brand-600" : ""}`}>{numberLabel(value, index < 2 ? 0 : index === 2 ? 2 : 1)}</td>)}
-        <td className="px-4 py-3 text-right"><EfficiencyValue value={member.efficiency.manualEfficiencyPercent} /></td><td className="px-4 py-3 text-right"><EfficiencyValue value={member.efficiency.kaironEfficiencyPercent} /></td>
-      </tr>)}</tbody>
-    </table>
-    </div>
-  </div>;
 }

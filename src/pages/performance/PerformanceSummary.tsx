@@ -1,34 +1,16 @@
-import type { ReactNode } from "react";
 import type { EfficiencySummary } from "@/api/types";
 import { EfficiencyValue } from "./EfficiencyValue";
 import { numberLabel } from "./performanceView";
 
-export function PerformanceSummary({ summary, label = "Personal performance summary" }: { summary: EfficiencySummary; label?: string }) {
-  return (
-          <section aria-label={label} className="grid gap-3 md:grid-cols-2">
-            <ComparisonCard title="Efficiency" note="100% meets target · capped at 120%">
-              <Metric label="Manual" value={<EfficiencyValue value={summary.manualEfficiencyPercent} large />} />
-              <Metric label="Kairon" value={<EfficiencyValue value={summary.kaironEfficiencyPercent} large />} />
-            </ComparisonCard>
-            <ComparisonCard title="Charts per day" note="Normalized to an 8-hour day" trailing={<span className="rounded-full bg-surface-muted px-2.5 py-1 text-xs font-medium text-content-secondary">Target {numberLabel(summary.targetCpd, 1)}</span>}>
-              <Metric label="Manual" value={numberLabel(summary.manualCpd, 1)} />
-              <Metric label="Kairon" value={numberLabel(summary.kaironCpd, 1)} />
-            </ComparisonCard>
-          </section>
-  );
-}
-
-function ComparisonCard({ title, note, trailing, children }: { title: string; note: string; trailing?: ReactNode; children: ReactNode }) {
-  return (
-    <article className="rounded-lg border border-border bg-surface px-5 py-4 shadow-sm">
-      <div className="flex min-h-6 flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-semibold">{title}</h2>{trailing}</div>
-      <div className="mt-3 grid grid-cols-2 divide-x divide-border">{children}</div>
-      <p className="mt-2 text-xs text-content-secondary">{note}</p>
+export function PerformanceSummary({ summary, label = "Personal performance summary" }: { summary: Omit<EfficiencySummary, "daily">; label?: string }) {
+  return <section aria-label={label} className="grid min-w-0 gap-3 md:grid-cols-2">
+    <article className="rounded-xl border border-border bg-surface px-4 py-3">
+      <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-semibold">Efficiency</h2><span className="text-xs text-content-muted">Target 100% · cap 120%</span></div>
+      <dl className="mt-3 grid grid-cols-2 divide-x divide-border"><div data-metric="kairon" className="metric-block"><dt className="text-xs text-brand-700">Kairon</dt><dd className="mt-1"><EfficiencyValue value={summary.kaironEfficiencyPercent} large /></dd></div><div data-metric="manual" className="metric-block pl-4"><dt className="text-xs text-content-secondary">Manual</dt><dd className="mt-1"><EfficiencyValue value={summary.manualEfficiencyPercent} large /></dd></div></dl>
     </article>
-  );
+    <article className="rounded-xl border border-border bg-surface px-4 py-3">
+      <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-semibold">Charts per day</h2><span data-metric="target" className="metric-label text-xs">Target {numberLabel(summary.targetCpd, 2)}</span></div>
+      <dl className="mt-3 grid grid-cols-2 divide-x divide-border"><div data-metric="kairon" className="metric-block"><dt className="text-xs text-brand-700">Kairon</dt><dd className="mt-1 text-2xl font-semibold tabular-nums">{numberLabel(summary.kaironCpd, 2)}</dd></div><div data-metric="manual" className="metric-block pl-4"><dt className="text-xs text-content-secondary">Manual</dt><dd className="mt-1 text-2xl font-semibold tabular-nums">{numberLabel(summary.manualCpd, 2)}</dd></div></dl>
+    </article>
+  </section>;
 }
-
-function Metric({ label, value }: { label: string; value: ReactNode }) {
-  return <div className="last:pl-5"><p className="text-xs text-content-secondary">{label}</p><div className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{value}</div></div>;
-}
-

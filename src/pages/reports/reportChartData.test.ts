@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DailyEfficiency } from "../../api/types";
-import { buildReportChartRows, chartGeometry } from "./reportChartData";
+import { axisDateLabel, buildReportChartRows, chartGeometry } from "./reportChartData";
 
 function day(date: string, overrides: Partial<DailyEfficiency> = {}): DailyEfficiency {
   return { date, stage: "M3", dailyTarget: 20, manualCharts: 12, kaironCharts: 9,
@@ -67,4 +67,35 @@ test("wide and narrow charts expose identical date slots at every scroll offset"
     }
   }
   assert.equal(chartGeometry([400, 400, 400], 1).maxStart, 0);
+});
+
+test("axis labels put day above month and preserve week/month context", () => {
+  assert.deepEqual(axisDateLabel("2026-09-30", "day"), {top:"30",bottom:"Sep"});
+  assert.deepEqual(axisDateLabel("2026-09-28", "week"), {top:"Wk 28",bottom:"Sep"});
+  assert.deepEqual(axisDateLabel("2026-09", "month"), {top:"Sep",bottom:"2026"});
+});
+
+test("compact graph dates exclude empty holidays and weekends but preserve production and empty working days", () => {
+  const empty = {manualCharts:0,kaironCharts:0};
+  const source = [[day("2026-10-02",empty),day("2026-10-03",empty),day("2026-10-04",{manualCharts:1,kaironCharts:0})]];
+  assert.deepEqual(buildReportChartRows(source,"2026-10-01","2026-10-05","day",true).map(row=>row.date),["2026-10-01","2026-10-04","2026-10-05"]);
+  assert.equal(buildReportChartRows([[day("2026-10-02",{manualCharts:0,kaironCharts:1})]],"2026-10-02","2026-10-02","day",true).length,1);
+  assert.equal(buildReportChartRows(source,"2026-10-02","2026-10-02","day").length,1);
+});
+
+
+test("aggregated manager totals use individual target records for CPD only", () => {
+  const aggregate = day("2026-10-05", { dailyTarget:270, adjustedCpd:"173.25", adjustedTarget:"180", kaironCharts:150 });
+  const records = Array.from({length:9}, () => ({date:"2026-10-05",dailyTarget:30,adjustedCpd:"19.25"}));
+  for (const interval of ["day", "week", "month"] as const) {
+    const [row] = buildReportChartRows([[aggregate]],"2026-10-05","2026-10-05",interval,true,records);
+    assert.equal(row.targetCpd,30);
+    assert.equal(row.adjustedCpd,19.25);
+    assert.equal(row.target,270);
+    assert.equal(row.adjusted,180);
+    assert.equal(row.kairon,150);
+  }
+  const [pending] = buildReportChartRows([[aggregate]],"2026-10-05","2026-10-05","day",true,[]);
+  assert.equal(pending.targetCpd,null);
+  assert.equal(pending.adjustedCpd,null);
 });

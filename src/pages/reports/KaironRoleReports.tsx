@@ -1,15 +1,15 @@
-import { useState } from "react";
+import { SearchableMultiSelect } from "@/components/ui/SearchableMultiSelect";
+import { useState, type ReactNode } from "react";
 
 import { getErrorMessage } from "@/api/apiError";
 import {
   useGetKaironCompletedCountsQuery,
   useGetKaironCompletedRecordsQuery,
   useGetKaironLeadTeamRangeQuery,
-  useGetKaironTeamHoldsQuery,
   useGetKaironTeamRecordsQuery,
 } from "@/api/reportsApi";
 import type { KaironChartRecord, KaironChartSummary, KaironCompletedDailyCount, ManualTeamUser } from "@/api/types";
-import { Drawer } from "@/components/ui/Drawer";
+import { ActionScreen } from "@/components/ui/ActionScreen";
 import { PaginationControls } from "@/components/ui/PaginationControls";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { useAuth } from "@/features/auth/useAuth";
@@ -62,12 +62,18 @@ export function KaironProductionCards({ coders, lead }: { coders: KaironChartSum
   );
 }
 
-export function KaironTeamTable({ members, caption, onSelect }: {
+export function KaironTeamTable({ members: allMembers, caption, onSelect, toolbar }: {
+  toolbar?: ReactNode;
   members: KaironTeamMember[];
   caption: string;
   onSelect: (member: KaironTeamMember) => void;
 }) {
-  return (
+  const [selectedIds, setSelectedIds] = useState<string[] | null>(null);
+  const ids = allMembers.map(member => String(member.user.id));
+  const members = selectedIds === null ? allMembers : allMembers.filter(member => selectedIds.includes(String(member.user.id)));
+  return (<>
+    <div className="kairon-team-toolbar flex flex-wrap items-center gap-3 py-2">{toolbar}<SearchableMultiSelect label="Users" noun="users" value={selectedIds === null ? ids : selectedIds.filter(id => ids.includes(id))} onChange={setSelectedIds}
+      options={allMembers.map(member => ({value:String(member.user.id),label:`${member.user.firstName} ${member.user.lastName}`}))} /></div>
     <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full min-w-[620px] table-fixed text-left text-sm">
         <caption className="sr-only">{caption}</caption>
@@ -86,10 +92,11 @@ export function KaironTeamTable({ members, caption, onSelect }: {
           </tr>
         </thead>
         <tbody className="divide-y divide-border bg-surface">
+          {!members.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-content-muted">No users in this selection. Choose teams or users to display records.</td></tr>}
           {members.map((member) => (
             <tr key={member.user.id} role="button" tabIndex={0}
               aria-label={`View ${member.user.firstName} ${member.user.lastName}'s completed charts`}
-              className="cursor-pointer transition-colors hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-brand-600"
+              className="cursor-pointer transition-colors hover:bg-surface-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-brand-600"
               onClick={() => onSelect(member)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -106,8 +113,9 @@ export function KaironTeamTable({ members, caption, onSelect }: {
             </tr>
           ))}
         </tbody>
+        <tfoot className="border-t-2 border-border bg-surface-muted font-semibold"><tr><th scope="row" className="px-4 py-3">Total</th>{(["pvp","foundation","total"] as const).map(key => <td key={key} className="px-4 py-3 text-right">{number(members.reduce((sum, member) => sum + member.summary[key], 0))}</td>)}</tr></tfoot>
       </table>
-    </div>
+    </div></>
   );
 }
 
@@ -161,7 +169,7 @@ function DayCountTable({ days, onSelect }: {
           {days.map((day) => (
             <tr key={day.date} role="button" tabIndex={0}
               aria-label={`View charts completed on ${dateLabel(day.date)}`}
-              className="cursor-pointer transition-colors hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-brand-600"
+              className="cursor-pointer transition-colors hover:bg-surface-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-brand-600"
               onClick={() => onSelect(day)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -174,6 +182,7 @@ function DayCountTable({ days, onSelect }: {
             </tr>
           ))}
         </tbody>
+        <tfoot className="border-t-2 border-border bg-surface-muted font-semibold"><tr><th scope="row" className="px-4 py-3">Total</th><td className="px-4 py-3 text-right">{number(days.reduce((sum,day) => sum + day.count,0))}</td></tr></tfoot>
       </table>
     </div>
   );
@@ -205,10 +214,10 @@ export function KaironCoderReport({ window }: { window: ManualReportWindow }) {
   return (
     <section className="flex min-w-0 flex-col gap-5">
       <div>
-        <h2 className="text-base font-semibold text-content-primary">My Kairon records</h2>
+        <h2 data-metric="kairon" className="metric-label text-base font-semibold text-content-primary">My Kairon records</h2>
         <p className="text-sm text-content-muted">Review your completed chart totals day by day.</p>
       </div>
-      <Drawer open={selectedDay !== null} onClose={() => setSelectedDay(null)}
+      <ActionScreen open={selectedDay !== null} onClose={() => setSelectedDay(null)}
         title={selectedDay ? `Completed charts · ${dateLabel(selectedDay.date)}` : "Completed charts"}
         description={`${number(selectedDay?.count ?? 0)} completed charts`}
         widthClass="max-w-6xl">
@@ -224,7 +233,7 @@ export function KaironCoderReport({ window }: { window: ManualReportWindow }) {
             </>
           )}
         </div>
-      </Drawer>
+      </ActionScreen>
       {isError && <ErrorState message="Couldn't load your completed dates." onRetry={refetch} />}
       {!isError && isFetching && !currentData && <LoadingState label="Loading completed dates…" />}
       {!isError && currentData && days.length === 0 && <EmptyState title="No completed charts available" />}
@@ -247,19 +256,10 @@ export function KaironCoderReport({ window }: { window: ManualReportWindow }) {
 
 export function KaironLeadReport({ window }: { window: ManualReportWindow }) {
   const { user } = useAuth();
-  const [holdPage, setHoldPage] = useState(1);
   const [selectedMember, setSelectedMember] = useState<KaironTeamMember | null>(null);
   const [recordPage, setRecordPage] = useState(1);
   const { currentData, isFetching, isError, error, refetch } = useGetKaironLeadTeamRangeQuery(
     window, { skip: !user, refetchOnMountOrArgChange: true },
-  );
-  const {
-    currentData: holds,
-    isFetching: holdsFetching,
-    isError: holdsError,
-    refetch: refetchHolds,
-  } = useGetKaironTeamHoldsQuery(
-    { page: holdPage, pageSize: 25 }, { skip: !user, refetchOnMountOrArgChange: true },
   );
   const {
     currentData: memberRecords,
@@ -289,15 +289,15 @@ export function KaironLeadReport({ window }: { window: ManualReportWindow }) {
     <section className="flex min-w-0 flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-content-primary">Kairon team records</h2>
-          <p className="text-sm text-content-muted">Review completed charts for your team. Current holds appear below.</p>
+          <h2 data-metric="kairon" className="metric-label text-base font-semibold text-content-primary">Kairon team records</h2>
+          <p className="text-sm text-content-muted">Review completed charts for your team.</p>
         </div>
 
       </div>
 
 
 
-      <Drawer open={selectedMember !== null} onClose={() => setSelectedMember(null)}
+      <ActionScreen open={selectedMember !== null} onClose={() => setSelectedMember(null)}
         title={selectedMember ? `${selectedMember.user.firstName} ${selectedMember.user.lastName} · Completed charts` : "Completed charts"}
         description={`${windowLabel(window)} · ${number(selectedMember?.summary.total ?? 0)} completed charts`}
         widthClass="max-w-6xl">
@@ -313,7 +313,7 @@ export function KaironLeadReport({ window }: { window: ManualReportWindow }) {
             </>
           )}
         </div>
-      </Drawer>
+      </ActionScreen>
 
       {isError && <ErrorState message={`Couldn't load Kairon team records. ${getErrorMessage(error)}`} onRetry={refetch} />}
       {!isError && missingSummary && <ErrorState message="The Kairon chart summary is not available on this server yet. Try again after the backend update." onRetry={refetch} />}
@@ -343,54 +343,6 @@ export function KaironLeadReport({ window }: { window: ManualReportWindow }) {
                   caption={`Coder Kairon records for ${windowLabel(window)}`} onSelect={openMemberRecords} />
               )}
             </div>
-          </section>
-          <section className="flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-surface p-4" aria-label="On hold charts">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <div>
-                <h3 className="font-semibold text-content-primary">On hold charts</h3>
-                <p className="text-sm text-content-muted">Current holds for you and your coders, regardless of the selected dates.</p>
-              </div>
-              {holds && <p className="text-sm font-semibold tabular-nums text-content-primary">{number(holds.total)} charts</p>}
-            </div>
-            {holdsError && <ErrorState message="Couldn't load charts on hold." onRetry={refetchHolds} />}
-            {!holdsError && holdsFetching && !holds && <LoadingState label="Loading charts on hold…" />}
-            {!holdsError && holds?.items.length === 0 && <EmptyState title="No charts on hold" />}
-            {!holdsError && holds && holds.items.length > 0 && (
-              <>
-                <div className="overflow-x-auto rounded-lg border border-border">
-                  <table className="w-full min-w-[920px] text-left text-sm">
-                    <thead className="bg-surface-muted text-xs uppercase tracking-wide text-content-muted">
-                      <tr>
-                        <th className="px-4 py-3 font-medium">Analyst</th>
-                        <th className="px-4 py-3 font-medium">Program</th>
-                        <th className="px-4 py-3 font-medium">Level</th>
-                        <th className="px-4 py-3 font-medium">Created</th>
-                        <th className="px-4 py-3 text-right font-medium">Age (days)</th>
-                        <th className="px-4 py-3 font-medium">Last action</th>
-                        <th className="px-4 py-3 font-medium">Practice</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border bg-surface">
-                      {holds.items.map((record) => (
-                        <tr key={record.id}>
-                          <th scope="row" className="px-4 py-3 text-left font-medium text-content-primary">{record.codingAnalyst}</th>
-                          <td className="px-4 py-3 text-content-secondary">{record.program}</td>
-                          <td className="px-4 py-3 text-content-secondary">{record.level}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-content-secondary">{record.created}</td>
-                          <td className="px-4 py-3 text-right tabular-nums text-content-secondary">{record.age ?? "—"}</td>
-                          <td className="px-4 py-3 text-content-secondary">{record.lastAction ?? "—"}</td>
-                          <td className="px-4 py-3 text-content-secondary">{record.practice ?? "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <PaginationControls
-                  page={holds.page} pageSize={holds.pageSize} total={holds.total}
-                  totalPages={holds.totalPages} onPageChange={setHoldPage}
-                />
-              </>
-            )}
           </section>
         </div>
       )}

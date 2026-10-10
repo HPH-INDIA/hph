@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useCreateProjectMutation, useDeleteProjectMutation, useListProjectsQuery, useUpdateProjectMutation, type Project } from "@/api/projectsApi";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { ActionScreen } from "@/components/ui/ActionScreen";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { useAuth } from "@/features/auth/useAuth";
@@ -39,7 +40,7 @@ export function ProjectsPage() {
         <p className="text-sm text-content-muted">Manage projects and view their assigned users.</p></div>
       {canWrite ? <Button onClick={() => setEditor({ name: "" })}>New project</Button> : <Badge tone="neutral">Read-only access</Badge>}
     </div>
-    {canWrite && editor && <form onSubmit={save} className="rounded-lg border border-border bg-surface p-4">
+    <ActionScreen open={canWrite && editor !== null} onClose={() => setEditor(null)} title={editor?.id ? "Edit project" : "Create project"} description="Update project details, then return to the project list.">{editor && <form onSubmit={save} className="rounded-lg border border-border bg-surface p-4">
       <h2 className="mb-3 font-semibold text-content-primary">{editor.id ? "Edit project" : "Create project"}</h2>
       <label className="flex flex-col gap-2 text-sm text-content-secondary">Project name
         <input autoFocus required maxLength={64} value={editor.name} disabled={saving} onChange={(e) => setEditor({ ...editor, name: e.target.value })}
@@ -47,7 +48,7 @@ export function ProjectsPage() {
       </label>
       <div className="mt-4 flex gap-2"><Button type="submit" isLoading={saving} disabled={!editor.name.trim()}>Save project</Button>
         <Button type="button" variant="secondary" disabled={saving} onClick={() => setEditor(null)}>Cancel</Button></div>
-    </form>}
+    </form>}</ActionScreen>
     <label className="flex flex-col gap-2 text-sm text-content-secondary">Search projects
       <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name…" className="h-10 rounded-md border border-border bg-surface px-3 text-content-primary" />
     </label>

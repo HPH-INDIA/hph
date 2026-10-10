@@ -88,9 +88,15 @@
   --color-warning-bg: #fdf4e7;
 
   /* Stable dashboard-series colors from the HPH brand and status palette. */
-  --color-chart-kairon: #500d80;
-  --color-chart-manual: #87037b;
-  --color-chart-target: #ff6900;
+  /* Semantic metric palette shared by every chart, card, and table. */
+  --color-metric-kairon: #312e81;
+  --color-metric-manual: #c2410c;
+  --color-metric-adjusted: #0f766e;
+  --color-metric-target: #9333ea;
+  --color-chart-kairon: var(--color-metric-kairon);
+  --color-chart-manual: var(--color-metric-manual);
+  --color-chart-target: var(--color-metric-adjusted);
+  --color-chart-goal: var(--color-metric-target);
   --color-chart-productive: #1fa755;
   --color-chart-downtime: #ce0037;
   --color-chart-idle: #a09cb0;

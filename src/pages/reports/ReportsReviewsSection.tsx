@@ -1,3 +1,4 @@
+import { displayNumber } from "@/utils/displayNumber";
 import { useState, type ReactNode } from "react";
 
 import { getErrorMessage } from "@/api/apiError";
@@ -5,7 +6,7 @@ import { useApproveManualDailyRecordMutation, useRejectManualDailyRecordMutation
 import { useBulkApproveManualRecordsMutation, useBulkRejectManualRecordsMutation, useGetManualTeamRangeQuery } from "@/api/reportsApi";
 import type { ManualDailyRecord, ManualTeamDayEntry, ManualTeamUser } from "@/api/types";
 import { Button } from "@/components/ui/Button";
-import { Drawer } from "@/components/ui/Drawer";
+import { ActionScreen } from "@/components/ui/ActionScreen";
 import { inputClasses } from "@/components/ui/FormField";
 import { ManualRecordStatusIndicator } from "@/components/ui/ManualRecordStatusIndicator";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
@@ -77,10 +78,10 @@ function TeamRecordsTable({
                 <td className="px-3 py-3 text-content-secondary">{record?.pvpCount ?? "—"}</td>
                 <td className="px-3 py-3 text-content-secondary">{record?.foundationCount ?? "—"}</td>
                 <td className="px-3 py-3 font-medium text-content-primary">{record?.productionCount ?? "—"}</td>
-                <td className="px-3 py-3 text-content-secondary">{record?.techIssuesDowntimeHours ?? "—"}</td>
-                <td className="px-3 py-3 text-content-secondary">{record?.noInventoryIdleTimeHours ?? "—"}</td>
-                <td className="px-3 py-3 text-content-secondary">{record?.leaveHours ?? "—"}</td>
-                <td className="px-3 py-3 text-content-secondary">{record?.meetingEngagementHours ?? "—"}</td>
+                <td className="px-3 py-3 text-content-secondary">{displayNumber(record?.techIssuesDowntimeHours)}</td>
+                <td className="px-3 py-3 text-content-secondary">{displayNumber(record?.noInventoryIdleTimeHours)}</td>
+                <td className="px-3 py-3 text-content-secondary">{displayNumber(record?.leaveHours)}</td>
+                <td className="px-3 py-3 text-content-secondary">{displayNumber(record?.meetingEngagementHours)}</td>
                 <td className="px-3 py-3 text-content-secondary">{record ? formatManualMeetings([record]) : "—"}</td>
                 <td className="px-3 py-3">
                   {record ? (
@@ -105,6 +106,7 @@ function TeamRecordsTable({
 }
 
 export function ReportsReviewsSection({ onEditOwnRecord, window }: ReportsReviewsSectionProps) {
+  const [approveDraft, setApproveDraft] = useState<{ date: string; ids: number[]; bulk: boolean } | null>(null);
   const [rejectDraft, setRejectDraft] = useState<RejectDraft | null>(null);
   const { user, hasRoleType, hasFeature } = useAuth();
   const canReview = hasRoleType("lead") && hasFeature("reports", "write");
@@ -134,15 +136,29 @@ export function ReportsReviewsSection({ onEditOwnRecord, window }: ReportsReview
   );
 
   const approveRecord = async (record: ManualDailyRecord) => {
-    if (actionsDisabled || !pendingIds.has(record.id)) return;
-    await approveOne(record.id);
+    if (actionsDisabled || !pendingIds.has(record.id)) return false;
+    const result = await approveOne(record.id);
+    return !("error" in result);
   };
   const approveAll = async (ids: number[]) => {
-    if (actionsDisabled || ids.length === 0 || ids.some((id) => !pendingIds.has(id))) return;
+    if (actionsDisabled || ids.length === 0 || ids.some((id) => !pendingIds.has(id))) return false;
     const result = await bulkApprove(ids);
     if (!("error" in result) && result.data.skipped.length > 0) {
       notifyInfo(`${result.data.approved.length} approved, ${result.data.skipped.length} skipped (already decided).`);
     }
+    return !("error" in result);
+  };
+  const submitApprove = async () => {
+    if (!approveDraft || approveDraft.date !== date || actionsDisabled) return;
+    const ids = approveDraft.ids.filter((id) => pendingIds.has(id));
+    if (ids.length === 0) {
+      notifyInfo("These records are no longer pending. The team records show their latest status.");
+      setApproveDraft(null);
+      return;
+    }
+    const record = team?.coders.flatMap((coder) => coder.records).find((entry) => entry.id === ids[0]);
+    const saved = approveDraft.bulk ? await approveAll(ids) : record ? await approveRecord(record) : false;
+    if (saved) setApproveDraft(null);
   };
   const openReject = (ids: number[], bulk: boolean) => {
     if (actionsDisabled || ids.length === 0 || ids.some((id) => !pendingIds.has(id))) return;
@@ -205,7 +221,7 @@ export function ReportsReviewsSection({ onEditOwnRecord, window }: ReportsReview
               <h4 className="text-sm font-semibold text-content-secondary">Coder {dayView ? "daily records" : "records"}</h4>
               {canReview && dayView && (
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" disabled={actionsDisabled || pendingIds.size === 0} isLoading={isBulkApproving} onClick={() => void approveAll([...pendingIds])}>Approve all ({pendingIds.size})</Button>
+                  <Button type="button" variant="secondary" disabled={actionsDisabled || pendingIds.size === 0} onClick={() => setApproveDraft({ date, ids: [...pendingIds], bulk: true })}>Approve all ({pendingIds.size})</Button>
                   <Button type="button" variant="danger" disabled={actionsDisabled || pendingIds.size === 0} onClick={() => openReject([...pendingIds], true)}>Reject all ({pendingIds.size})</Button>
                 </div>
               )}
@@ -219,7 +235,7 @@ export function ReportsReviewsSection({ onEditOwnRecord, window }: ReportsReview
                 renderActions={canReview ? ({ user: coder, record }) => (
                   record && pendingIds.has(record.id) ? (
                     <div className="flex gap-2">
-                      <Button type="button" variant="secondary" disabled={actionsDisabled} aria-label={`Approve ${userName(coder)}'s record`} onClick={() => void approveRecord(record)}>Approve</Button>
+                      <Button type="button" variant="secondary" disabled={actionsDisabled} aria-label={`Approve ${userName(coder)}'s record`} onClick={() => setApproveDraft({ date, ids: [record.id], bulk: false })}>Approve</Button>
                       <Button type="button" variant="danger" disabled={actionsDisabled} aria-label={`Reject ${userName(coder)}'s record`} onClick={() => openReject([record.id], false)}>Reject</Button>
                     </div>
                   ) : null
@@ -232,8 +248,24 @@ export function ReportsReviewsSection({ onEditOwnRecord, window }: ReportsReview
           </div>
         </>
       )}
+      {approveDraft && approveDraft.date === date && (
+        <ActionScreen open onClose={() => { if (!isMutating) setApproveDraft(null); }}
+          title={approveDraft.bulk ? `Approve ${approveDraft.ids.length} records` : "Approve daily record"}
+          description={`Review the submitted production for ${date} before confirming.`} widthClass="max-w-6xl">
+          <div className="flex flex-col gap-5">
+            <TeamRecordsTable caption={`Selected records for ${date}`} entries={(team?.coders ?? []).flatMap((coder) =>
+              coder.records.filter((record) => approveDraft.ids.includes(record.id)).map((record) => ({ user: coder.user, record })))} />
+            <div className="flex gap-3 border-t border-border pt-4">
+              <Button type="button" variant="secondary" disabled={isMutating} onClick={() => setApproveDraft(null)}>Cancel</Button>
+              <Button type="button" disabled={actionsDisabled} isLoading={isApprovingOne || isBulkApproving} onClick={() => void submitApprove()}>
+                {approveDraft.bulk ? "Confirm approval" : "Approve record"}
+              </Button>
+            </div>
+          </div>
+        </ActionScreen>
+      )}
       {rejectDraft && rejectDraft.date === date && (
-        <Drawer open onClose={() => { if (!isMutating) setRejectDraft(null); }}
+        <ActionScreen open onClose={() => { if (!isMutating) setRejectDraft(null); }}
           title={rejectDraft.bulk ? `Reject ${rejectDraft.ids.length} pending records?` : "Reject this record?"}
           description={rejectDraft.bulk ? `The same optional reason will be added to each selected record for ${date}.` : `Let the coder know what to fix for ${date}.`}
           widthClass="max-w-md">
@@ -244,7 +276,7 @@ export function ReportsReviewsSection({ onEditOwnRecord, window }: ReportsReview
             <Button type="button" variant="secondary" disabled={isMutating} onClick={() => setRejectDraft(null)}>Cancel</Button>
             <Button type="button" variant="danger" disabled={actionsDisabled} isLoading={isRejectingOne || isBulkRejecting} onClick={() => void submitReject()}>{rejectDraft.bulk ? "Reject all" : "Reject"}</Button>
           </div>
-        </Drawer>
+        </ActionScreen>
       )}
     </section>
   );

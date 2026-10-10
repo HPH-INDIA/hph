@@ -34,12 +34,12 @@ test("date and stage search combines with filters; sorting leaves source records
   assert.equal(rows[0].date, "2026-09-02");
 });
 
-test("export uses the saved adjusted CPD, keeps zero distinct from missing, and escapes CSV cells", () => {
+test("export fills missing metrics with zero and escapes CSV cells", () => {
   const csv = dailyCsv([day("2026-09-01", null, { stage: 'Nesting, "Week 1"', adjustedCpd: "0.00" })]);
-  assert.equal(csv.split("\r\n")[1], '"2026-09-01","Nesting, ""Week 1""","0","0","0.00","","","","","120.0"');
+  assert.equal(csv.split("\r\n")[1], '"2026-09-01","Nesting, ""Week 1""","0","0","0","0","0","0","0","120","0"');
   assert.ok(!csv.includes("29.10"));
   assert.ok(dailyCsv([day("2026-09-01", "100", { stage: "=1+1" })]).includes('"\'=1+1"'));
-  assert.equal(numberLabel(0, 2), "0.00");
+  assert.equal(numberLabel(0, 2), "0");
   assert.equal(numberLabel(null, 2), "—");
 });
 
@@ -48,7 +48,7 @@ test("month navigation crosses year boundaries without day rollover", () => {
   assert.equal(shiftMonth("2025-12", 1), "2026-01");
 });
 
-test("member export preserves selected row order, raw metrics, zero and missing values", () => {
+test("member export preserves selected order and formats missing metrics and precision", () => {
   const members: CoderPerformanceMember[] = [
     { userId: 2, name: "Zoya", isActive: false, efficiency: {
       manualCharts: 0, kaironCharts: 12, adjustedCpd: "28.13", manualCpd: "0.00", kaironCpd: "12.345",
@@ -57,20 +57,31 @@ test("member export preserves selected row order, raw metrics, zero and missing 
     { userId: 1, name: "Alex", isActive: true, efficiency: null },
   ];
   const lines = memberCsv(members).split("\r\n");
-  assert.equal(lines[0], '"Coder","Manual charts completed","Kairon charts completed","Adjusted target CPD","Manual CPD","Kairon CPD","Target CPD","Manual efficiency (%)","Kairon efficiency (%)"');
-  assert.equal(lines[1], '"Zoya","0","12","28.13","0.00","12.345","30.00","0.0",""');
-  assert.equal(lines[2], '"Alex","0","0","","","","","",""');
+  assert.equal(lines[0], '"Coder","Kairon charts completed","Manual charts completed","Adjusted Targets","Adjusted Target CPD","Kairon CPD","Manual CPD","Target CPD","Kairon efficiency (%)","Manual efficiency (%)"');
+  assert.equal(lines[1], '"Zoya","12","0","28","0","12.35","0","30","0","0"');
+  assert.equal(lines[2], '"Alex","0","0","0","0","0","0","0","0","0"');
   const metrics = members[0].efficiency!;
-  assert.ok(memberCsv([{ ...members[0], efficiency: { ...metrics, adjustedCpd: "0.00" } }]).includes('"Zoya","0","12","0.00"'));
-  assert.equal(memberCsv(members.slice(1)).split("\r\n").length, 2);
+  assert.ok(memberCsv([{ ...members[0], efficiency: { ...metrics, adjustedCpd: "0.00" } }]).includes('"Zoya","12","0","0"'));
+  assert.equal(memberCsv(members.slice(1)).split("\r\n").length, 3);
   assert.deepEqual(members.map((member) => member.userId), [2, 1]);
 });
 
 test("QA export uses lead headers and safely escapes names for spreadsheets", () => {
   const member = (name: string): CoderPerformanceMember => ({ userId: 1, name, isActive: true, efficiency: null });
   const csv = memberCsv([member('Zoë, "QA"\nLead'), member(" =1+1"), member("+SUM(A1)"), member("@name"), member("-name")], "Lead");
-  assert.ok(csv.startsWith('"Lead","Manual charts completed"'));
+  assert.ok(csv.startsWith('"Lead","Kairon charts completed"'));
   assert.ok(csv.includes('"Zoë, ""QA""\nLead"'));
   for (const name of [" =1+1", "+SUM(A1)", "@name", "-name"]) assert.ok(csv.includes(`"'${name}"`));
   assert.equal(memberCsv([], "Lead").split("\r\n").length, 1);
+});
+
+
+test("CSV totals use raw combined denominators and include only supplied rows", () => {
+  const rows = [day("2026-09-01", "50", {kaironCharts:10,manualCharts:20,targetMinutes:480,adjustedTarget:"30",adjustedCpd:"25"}),
+    day("2026-09-02", "100", {kaironCharts:30,manualCharts:10,targetMinutes:240,adjustedTarget:"15",adjustedCpd:"10"})];
+  const daily = dailyCsv(rows).split("\r\n");
+  assert.equal(daily.at(-1), '"Total","All matching records","40","30","35","17.5","26.67","20","30","89","67"');
+  const members = rows.map((row,index) => ({userId:index,name:`User ${index}`,isActive:true,efficiency:row,daily:[row]}));
+  assert.equal(memberCsv(members).split("\r\n").at(-1), '"Total","40","30","35","17.5","26.67","20","30","89","67"');
+  assert.ok(memberCsv(members.slice(0,1)).split("\r\n").at(-1)?.startsWith('"Total","10","20","25"'));
 });

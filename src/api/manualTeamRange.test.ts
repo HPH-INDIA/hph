@@ -19,7 +19,7 @@ function user(id: number, roleType: RoleTypeCode, reportsTo: number | null, chan
   return {
     id, first_name: `Person ${id}`, last_name: "Test", email: `${id}@example.test`, emp_id: `EMP${id}`,
     role_id: id, project_id: 1, reports_to_id: reportsTo, first_login: false, is_active: true,
-    last_working_day: null, created_at: "2026-01-01", updated_at: "2026-01-01",
+    join_date: null, last_working_day: null, created_at: "2026-01-01", updated_at: "2026-01-01",
     role: { id, title: roleType, roleType, sessionTimeoutMinutes: 30, features: ["user_management", "reports"] },
     ...changes,
   };

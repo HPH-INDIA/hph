@@ -54,6 +54,7 @@ export interface AdminUser {
   reports_to_id: number | null;
   first_login: boolean;
   is_active: boolean;
+  join_date: string | null;
   last_working_day: string | null;
   created_at: string;
   updated_at: string;
@@ -68,6 +69,7 @@ export interface UserCreatePayload {
   role_id: number;
   project_id?: number | null;
   reports_to_id?: number | null;
+  join_date?: string | null;
 }
 export type UserUpdatePayload = Partial<UserCreatePayload>;
 
@@ -95,6 +97,9 @@ export interface CodingUserSummary {
   lastName: string;
   empId: string;
   roleType: CodingRoleType;
+  joinDate: string | null;
+  isActive: boolean;
+  lastWorkingDay: string | null;
 }
 
 export interface CohortMember {
@@ -116,7 +121,29 @@ export interface TeamCohort {
 
 export type CoderStageFilter = "Training" | "M1" | "M2" | "M3" | "M4" | "Steady State" | "Unassigned";
 
+export type FoundationStageCode = "W1" | "W2" | "W3" | "W4" | "Steady State";
+export interface StagePeriod {
+  stageCode: string;
+  startDate: string;
+  endDate: string | null;
+  source: string;
+}
+export interface FoundationProgress {
+  eligibility: "eligible" | "awaiting_foundation" | "foundation_first" | "same_day_unknown";
+  firstPvpCompleted: string | null;
+  firstFoundationCompleted: string | null;
+  currentStage: FoundationStageCode | null;
+  dailyTarget: number | null;
+  periods: StagePeriod[];
+}
 export interface TeamCoderOverviewItem {
+  joinedOn: string | null;
+  stageAsOf: string;
+  firstCompleted: string | null;
+  refreshedAt: string | null;
+  dataIssue: string | null;
+  periods: StagePeriod[];
+  foundation: FoundationProgress;
   coder: CodingUserSummary;
   cohort: Pick<TeamCohort, "id" | "label"> | null;
   currentStage: string | null;
@@ -152,9 +179,16 @@ export interface StageTargetRule {
   created_at: string;
 }
 
+export type TargetApplyFrom = "today" | "program_start";
+
+export interface StageTargetChangeResult extends StageTargetRule {
+  recalculatedRecords: number;
+  applyFrom: TargetApplyFrom;
+}
+
 export interface ChangeStageTargetPayload {
   stageCode: TargetStageCode;
-  effectiveFrom: string;
+  applyFrom: TargetApplyFrom;
   dailyTarget: number;
   reason?: string | null;
 }
@@ -448,6 +482,8 @@ export interface ManualMeeting {
 // (ManualDailyRecordSchema). The four hour fields come back as strings
 // (as_string=True on the backend's Decimal field).
 export interface ManualDailyRecord {
+  pvpDailyTarget?: number | null;
+  foundationDailyTarget?: number | null;
   dailyTarget?: number | null;
   adjustedCpd?: string | null;
   id: number;
@@ -871,4 +907,35 @@ export interface ManagerDashboardSummary {
   coders: LeadPerformanceSection;
   teams: ManagerPerformanceTeam[];
   members: ManagerPerformanceMember[];
+}
+
+export type KaironHoldView = "all" | "coders" | "leads";
+
+export type KaironHoldAgeBucket = "on_track" | "monitor" | "attention" | "priority" | "unknown";
+export type KaironHoldSort = "id" | "user" | "program" | "created" | "practice" | "lastAction" | "age" | "tat";
+
+export interface KaironHoldQuery extends PaginationQuery {
+  ageBucket?: KaironHoldAgeBucket;
+  sortBy?: KaironHoldSort;
+  sortDirection?: "asc" | "desc";
+  view?: KaironHoldView;
+  userId?: number;
+  leadId?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  practice?: string;
+  withoutPractice?: boolean;
+}
+
+export interface KaironHoldSummary {
+  ageBuckets: Record<KaironHoldAgeBucket, number>;
+  total: number;
+  coderCount: number;
+  leadCount: number;
+  users: { id: number; name: string; roleType: "employee" | "lead"; leadId: number | null; count: number }[];
+  practices: string[];
+}
+
+export interface ChangeFoundationTargetPayload extends Omit<ChangeStageTargetPayload, "stageCode"> {
+  stageCode: FoundationStageCode;
 }

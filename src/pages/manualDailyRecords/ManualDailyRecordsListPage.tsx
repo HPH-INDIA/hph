@@ -1,3 +1,4 @@
+import { displayNumber } from "@/utils/displayNumber";
 import { useState } from "react";
 
 import {
@@ -8,7 +9,7 @@ import {
 import type { ManualDailyRecordStatus } from "@/api/types";
 import { useUserNameLookup } from "@/api/useUserNameLookup";
 import { Button } from "@/components/ui/Button";
-import { Drawer } from "@/components/ui/Drawer";
+import { ActionScreen } from "@/components/ui/ActionScreen";
 import { inputClasses } from "@/components/ui/FormField";
 import { ManualRecordStatusIndicator } from "@/components/ui/ManualRecordStatusIndicator";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
@@ -146,10 +147,10 @@ export function ManualDailyRecordsListPage() {
                   <td className="px-4 py-3 text-content-secondary">{record.pvpCount}</td>
                   <td className="px-4 py-3 text-content-secondary">{record.foundationCount}</td>
                   <td className="px-4 py-3 font-medium text-content-primary">{record.productionCount}</td>
-                  <td className="px-4 py-3 text-content-secondary">{record.techIssuesDowntimeHours}</td>
-                  <td className="px-4 py-3 text-content-secondary">{record.noInventoryIdleTimeHours}</td>
-                  <td className="px-4 py-3 text-content-secondary">{record.leaveHours}</td>
-                  <td className="px-4 py-3 text-content-secondary">{record.meetingEngagementHours}</td>
+                  <td className="px-4 py-3 text-content-secondary">{displayNumber(record.techIssuesDowntimeHours)}</td>
+                  <td className="px-4 py-3 text-content-secondary">{displayNumber(record.noInventoryIdleTimeHours)}</td>
+                  <td className="px-4 py-3 text-content-secondary">{displayNumber(record.leaveHours)}</td>
+                  <td className="px-4 py-3 text-content-secondary">{displayNumber(record.meetingEngagementHours)}</td>
                   <td className="px-4 py-3 text-content-secondary">{formatManualMeetings([record])}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
@@ -181,7 +182,7 @@ export function ManualDailyRecordsListPage() {
       )}
 
       {rejectingId !== null && (
-        <Drawer
+        <ActionScreen
           open
           onClose={() => {
             setRejectingId(null);
@@ -213,7 +214,7 @@ export function ManualDailyRecordsListPage() {
                 Reject
               </Button>
             </div>
-        </Drawer>
+        </ActionScreen>
       )}
     </div>
   );

@@ -70,6 +70,9 @@ export const usersApi = apiSlice.injectEndpoints({
         { type: "Users", id },
         { type: "Users", id: "LIST" },
         { type: "Projects", id: "LIST" },
+        { type: "Team" },
+        { type: "Cohorts", id: "LIST" },
+        { type: "CodingDashboard" },
       ],
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         await notifyOnSettle(dispatch, queryFulfilled);
@@ -85,6 +88,9 @@ export const usersApi = apiSlice.injectEndpoints({
         { type: "Users", id },
         { type: "Users", id: "LIST" },
         { type: "Projects", id: "LIST" },
+        { type: "Team" },
+        { type: "Cohorts", id: "LIST" },
+        { type: "CodingDashboard" },
       ],
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         await notifyOnSettle(dispatch, queryFulfilled);

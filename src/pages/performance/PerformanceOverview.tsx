@@ -1,13 +1,14 @@
+import { PerformanceSummary } from "./PerformanceSummary";
 import { SortableHeader } from "@/components/ui/SortableHeader";
 import { numericSortValue, sortTableRows, type SortColumn, type TableSort } from "@/components/ui/tableSort";
 import { useState } from "react";
+import { ReportGraphs } from "@/pages/reports/ReportGraphs";
+import { PerformanceTabs } from "./PerformanceTabs";
 
 import type { EfficiencySummary, MonthlyGoalSummary } from "@/api/types";
 import { ErrorState, LoadingState } from "@/components/ui/StateViews";
 
 import { DailyPerformance } from "./DailyPerformance";
-import { PerformanceSummary } from "./PerformanceSummary";
-import { GoalCard } from "./GoalCard";
 import { chartsToGoal } from "./goalMetrics";
 import { chartLabel, monthLabel, numberLabel, shiftMonth } from "./performanceView";
 
@@ -30,15 +31,14 @@ interface PerformanceOverviewProps {
 
 export function PerformanceOverview(props: PerformanceOverviewProps) {
   const { month, currentMonth, onMonthChange, goal, summary } = props;
+  const [view, setView] = useState<"overview" | "trends">("overview");
   return (
-    <div className="mx-auto flex min-w-0 max-w-screen-2xl flex-col gap-5 text-content-primary">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-brand-600">My workspace</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Your performance</h1>
-          <p className="mt-1 text-sm text-content-secondary">{props.firstName ? `${props.firstName}, here’s` : "Here’s"} your month at a glance.</p>
-        </div>
-        <div className="flex max-w-full items-center gap-1 rounded-lg border border-border bg-surface p-1.5 shadow-sm">
+    <div className="coder-dashboard-fit mx-auto flex min-w-0 max-w-screen-2xl flex-col gap-3 text-content-primary">
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h1 className="sr-only">Your performance</h1>
+        <PerformanceTabs value={view} onChange={setView} items={[{ value: "overview", label: "Overview" }, { value: "trends", label: "Trends" }]} label="Personal performance views" />
+        <div className="flex max-w-full flex-wrap items-center gap-2">
+          <div className="flex max-w-full items-center rounded-md border border-border bg-surface">
           <button type="button" aria-label="Previous month" disabled={month <= "1900-01"} onClick={() => onMonthChange(shiftMonth(month, -1))} className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-content-secondary hover:bg-surface-muted disabled:opacity-30 ${focusClass}`}>
             <Chevron direction="left" />
           </button>
@@ -52,39 +52,52 @@ export function PerformanceOverview(props: PerformanceOverviewProps) {
           <button type="button" aria-label="Next month" disabled={month >= currentMonth} onClick={() => onMonthChange(shiftMonth(month, 1))} className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-content-secondary hover:bg-surface-muted disabled:opacity-30 ${focusClass}`}>
             <Chevron direction="right" />
           </button>
+          </div>
         </div>
       </header>
 
-      {props.goalLoading ? <LoadingState label="Loading your monthly goal…" />
+      <div className="coder-summary-grid grid min-w-0 gap-3">
+        <div className="min-w-0">      {props.goalLoading ? <LoadingState label="Loading your monthly goal…" />
         : props.goalError ? <ErrorState message={props.goalError} onRetry={props.onRetryGoal} />
         : goal ? <MonthlyGoal goal={goal} month={month} /> : null}
+        </div>
+        {!props.summaryLoading && !props.summaryError && summary && <div className="coder-summary-rates min-w-0"><PerformanceSummary summary={summary} /></div>}
+      </div>
+      <div className="coder-dashboard-results min-w-0 space-y-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600" role="region" aria-label="Personal performance results" tabIndex={0}>
+        {props.summaryLoading ? <LoadingState label="Loading your performance…" />
+          : props.summaryError ? <ErrorState message={props.summaryError} onRetry={props.onRetrySummary} />
+          : summary ? view === "trends"
+            ? <ReportGraphs sources={[summary.daily]} from={summary.from} to={summary.to} />
+            : <DailyPerformance paginate={false} key={month} rows={summary.daily} month={month} title="Daily performance" /> : null}
+      </div>
 
-      {props.summaryLoading ? <LoadingState label="Loading your performance…" />
-        : props.summaryError ? <ErrorState message={props.summaryError} onRetry={props.onRetrySummary} />
-        : summary ? <>
-          <PerformanceSummary summary={summary} />
-          <DailyPerformance key={month} rows={summary.daily} month={month} />
-        </> : null}
 
-      <CalculationHelp />
     </div>
   );
 }
 
 function MonthlyGoal({ goal, month }: { goal: MonthlyGoalSummary; month: string }) {
-  const isTeam = goal.scope === "team";
-  return <GoalCard goal={goal} label={isTeam ? "Team monthly goal" : "Monthly goal"}
-    periodLabel={`Full-month goal · ${monthLabel(month)}${isTeam ? ` · ${goal.userCount} people` : ""}`}>
-    {isTeam && <TeamGoals goal={goal} />}
-  </GoalCard>;
+  const difference = chartsToGoal(goal.completedCharts, goal.adjustedTargetCharts);
+  return <section aria-label="Monthly goal" className="h-full rounded-xl border border-border bg-surface px-4 py-3">
+    <div className="grid grid-cols-2 items-start gap-x-4 gap-y-3 lg:grid-cols-5">
+      <div className="col-span-2 flex flex-wrap items-center justify-between gap-2 lg:col-span-5"><h2 className="text-sm font-semibold">Monthly goal</h2><p className="mt-1 text-xs text-content-secondary">Full month · {monthLabel(month)}</p></div>
+      <dl data-metric="kairon" className="metric-block"><dt className="text-xs">Kairon charts completed</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{numberLabel(goal.completedCharts)}</dd></dl>
+      <dl data-metric="manual" className="metric-block"><dt className="text-xs">Manual charts completed</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{numberLabel(goal.manualCharts)}</dd></dl>
+      <dl data-metric="target" className="metric-block"><dt className="text-xs">Target goal</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{numberLabel(goal.targetCharts)}</dd></dl>
+      <dl data-metric="adjusted" className="metric-block"><dt className="text-xs">Adjusted goal</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{chartLabel(goal.adjustedTargetCharts)}</dd></dl>
+      <dl><dt className="text-xs text-content-secondary">Chart shortfall / surplus</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{difference != null && difference > 0 ? "+" : ""}{chartLabel(difference)}</dd><dd className="text-[11px] text-content-muted">Kairon completed − adjusted monthly goal</dd></dl>
+    </div>
+
+    {goal.scope === "team" && <TeamGoals goal={goal} />}
+  </section>;
 }
 
 type GoalMember = NonNullable<MonthlyGoalSummary["users"]>[number];
 const goalColumns: SortColumn<GoalMember>[] = [
   { key: "name", label: "Team member", value: (row) => row.name },
-  ...([["targetCharts", "Target goal charts"], ["adjustedTargetCharts", "Adjusted goal charts"], ["manualCharts", "Manual charts completed"], ["completedCharts", "Kairon charts completed"]] as const)
+  ...([["completedCharts", "Kairon charts completed"], ["manualCharts", "Manual charts completed"], ["targetCharts", "Target goal"], ["adjustedTargetCharts", "Adjusted goal"]] as const)
     .map(([key, label]) => ({ key, label, value: (row: GoalMember) => numericSortValue(row[key]), defaultDirection: "desc" as const })),
-  { key: "chartsToGoal", label: "No. of charts to goal", value: (row) => chartsToGoal(row.completedCharts, row.adjustedTargetCharts), defaultDirection: "desc" },
+  { key: "chartsToGoal", label: "Chart shortfall / surplus", value: (row) => chartsToGoal(row.completedCharts, row.adjustedTargetCharts), defaultDirection: "desc" },
 ];
 function TeamGoals({ goal }: { goal: MonthlyGoalSummary }) {
   const [sort, setSort] = useState<TableSort>({ key: "name", direction: "asc" });
@@ -102,12 +115,17 @@ function TeamGoals({ goal }: { goal: MonthlyGoalSummary }) {
           </tr></thead>
           <tbody className="divide-y divide-border">{members.map((member) => <tr key={member.userId}>
             <th scope="row" className="py-3 pr-3 font-medium">{member.name}</th>
+            <td className="px-3 py-3 text-right">{numberLabel(member.completedCharts)}</td>
+            <td className="px-3 py-3 text-right">{numberLabel(member.manualCharts)}</td>
             <td className="px-3 py-3 text-right">{numberLabel(member.targetCharts)}</td>
             <td className="px-3 py-3 text-right">{chartLabel(member.adjustedTargetCharts)}</td>
-            <td className="px-3 py-3 text-right">{numberLabel(member.manualCharts)}</td>
-            <td className="px-3 py-3 text-right">{numberLabel(member.completedCharts)}</td>
             <td className="px-3 py-3 text-right font-semibold text-brand-600">{chartLabel(chartsToGoal(member.completedCharts, member.adjustedTargetCharts))}</td>
           </tr>)}</tbody>
+          <tfoot className="border-t-2 border-border bg-surface-muted font-semibold"><tr><th scope="row" className="px-3 py-3">Total</th>
+            {(["completedCharts","manualCharts","targetCharts"] as const).map(key => <td key={key} className="px-3 py-3 text-right">{numberLabel(members.reduce((sum,member) => sum + member[key],0))}</td>)}
+            <td className="px-3 py-3 text-right">{members.every(member => member.adjustedTargetCharts != null) ? chartLabel(members.reduce((sum,member) => sum + Number(member.adjustedTargetCharts),0)) : "—"}</td>
+            <td className="px-3 py-3 text-right">{members.every(member => member.adjustedTargetCharts != null) ? chartLabel(members.reduce((sum,member) => sum + member.completedCharts - Number(member.adjustedTargetCharts),0)) : "—"}</td>
+          </tr></tfoot>
         </table>
       </div> : <p className="px-5 pb-5 text-sm text-content-secondary sm:px-7">Team member details are unavailable.</p>}
     </details>
@@ -116,20 +134,4 @@ function TeamGoals({ goal }: { goal: MonthlyGoalSummary }) {
 
 function Chevron({ direction }: { direction: "left" | "right" }) {
   return <svg aria-hidden="true" viewBox="0 0 20 20" className={`h-4 w-4 ${direction === "left" ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 5 5 5-5 5" /></svg>;
-}
-
-function CalculationHelp() {
-  const [open, setOpen] = useState(false);
-  return (
-    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="rounded-lg border border-border bg-surface">
-      <summary className={`flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-sm font-medium text-content-secondary [&::-webkit-details-marker]:hidden ${focusClass}`}>
-        How these numbers work <span className={open ? "rotate-90" : ""}><Chevron direction="right" /></span>
-      </summary>
-      <div className="grid gap-5 border-t border-border px-5 py-5 text-xs leading-relaxed text-content-secondary md:grid-cols-3">
-        <div><h3 className="mb-2 text-sm font-semibold text-content-primary">Adjusted target CPD</h3><p>Your stage target × available manual hours ÷ 8. Available hours start at 8 and deduct downtime, no-inventory / idle time, leave, and meetings other than Huddle, including one-on-ones. Hours cannot fall below zero. This value updates when your manual record is saved.</p></div>
-        <div><h3 className="mb-2 text-sm font-semibold text-content-primary">Monthly goal</h3><p>Your full-month target excludes weekends, office holidays, and full-leave days. Saved manual adjustments reduce the eligible daily targets. Kairon charts completed come from the goal’s reporting period. No. of charts to goal is Kairon completed minus the adjusted goal: negative below goal, zero at goal, and positive above goal.</p></div>
-        <div><h3 className="mb-2 text-sm font-semibold text-content-primary">CPD & efficiency</h3><p>Manual and Kairon CPD normalize completed charts to an 8-hour day using the Daily Refresh hours: 8 hours minus downtime, idle time, all meetings, and leave. Efficiency compares charts with the target for those hours and is capped at 120%. Monthly values use weighted totals. A dash means no value is available.</p></div>
-      </div>
-    </details>
-  );
 }

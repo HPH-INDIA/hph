@@ -1,3 +1,4 @@
+import { displayNumber } from "@/utils/displayNumber";
 import type { ManualDailyRecord, ManualTeamRangeGroup } from "@/api/types";
 
 export interface ManualReportWindow {
@@ -66,7 +67,7 @@ export function formatManualMeetings(records: ManualDailyRecord[]) {
       : Number(record.meetingEngagementHours) > 0
         ? [{ type: record.meetingType, hours: record.meetingEngagementHours }]
         : [];
-    return meetings.map((meeting) => `${meeting.type ?? "Unspecified"} (${Number(meeting.hours).toFixed(2)}h)`).join(", ") || "—";
+    return meetings.map((meeting) => `${meeting.type ?? "Unspecified"} (${displayNumber(meeting.hours)}h)`).join(", ") || "—";
   }
   const byType = new Map<string, number>();
   for (const record of records) {
@@ -80,5 +81,5 @@ export function formatManualMeetings(records: ManualDailyRecord[]) {
       byType.set(type, (byType.get(type) ?? 0) + Math.round(Number(meeting.hours) * 100));
     }
   }
-  return [...byType].map(([type, hundredths]) => `${type} (${(hundredths / 100).toFixed(2)}h)`).join(", ") || "—";
+  return [...byType].map(([type, hundredths]) => `${type} (${displayNumber(hundredths / 100)}h)`).join(", ") || "—";
 }

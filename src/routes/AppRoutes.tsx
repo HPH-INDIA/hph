@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "@/layout/AppShell";
+import { HelpPage } from "@/pages/help/HelpPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { SetPasswordPage } from "@/pages/SetPasswordPage";
 import { DashboardPage } from "@/pages/DashboardPage";
@@ -13,7 +14,9 @@ import { RolesListPage } from "@/pages/admin/roles/RolesListPage";
 import { FeaturesListPage } from "@/pages/admin/features/FeaturesListPage";
 import { FeatureEditorDrawerPage, RoleEditorDrawerPage } from "@/pages/admin/AdminEditorDrawers";
 import { ReportsPage } from "@/pages/reports/ReportsPage";
+import { ChartHoldsPage } from "@/pages/reports/ChartHoldsPage";
 import { TeamManagementPage } from "@/pages/team/TeamManagementPage";
+import { StageTargetsPage } from "@/pages/team/StageTargetsPage";
 import { LoginHoursPage } from "@/pages/loginHours/LoginHoursPage";
 
 import { RequireAuth } from "./RequireAuth";
@@ -51,6 +54,7 @@ export function AppRoutes() {
               }
             />
             <Route path="/admin/projects" element={<RequireFeature codename="project_management"><ProjectsPage /></RequireFeature>} />
+            <Route path="/help" element={<HelpPage />} />
             <Route path="/account" element={<AccountSessionsPage />} />
             <Route path="/input-data" element={<Navigate to="/reports" replace />} />
 
@@ -65,6 +69,8 @@ export function AppRoutes() {
                 </RequireFeature>
               }
             />
+
+            <Route path="/reports/chart-holds" element={<RequireFeature codename="reports"><ChartHoldsPage /></RequireFeature>} />
 
             <Route path="/coding" element={<Navigate to="/" replace />} />
 
@@ -86,6 +92,17 @@ export function AppRoutes() {
                 <RequireFeature codename="user_management">
                   <RequireRoleType code="manager">
                     <TeamManagementPage />
+                  </RequireRoleType>
+                </RequireFeature>
+              }
+            />
+
+            <Route
+              path="/team/stage-targets"
+              element={
+                <RequireFeature codename="user_management" access="write">
+                  <RequireRoleType code="manager">
+                    <StageTargetsPage />
                   </RequireRoleType>
                 </RequireFeature>
               }

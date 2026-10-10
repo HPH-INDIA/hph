@@ -12,6 +12,7 @@ import {
 import type { LoginHoursUploadBatch } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
+import { ActionScreen } from "@/components/ui/ActionScreen";
 import { inputClasses } from "@/components/ui/FormField";
 import { PaginationControls } from "@/components/ui/PaginationControls";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
@@ -182,7 +183,7 @@ export function LoginHoursPage() {
         {canUpload && <Button onClick={() => setShowUpload(true)}>Upload attendance workbook</Button>}
       </div>
 
-      <Drawer
+      <ActionScreen
         open={canUpload && showUpload}
         onClose={() => setShowUpload(false)}
         title="Upload attendance workbook"
@@ -221,7 +222,7 @@ export function LoginHoursPage() {
               )}
             </div>
           )}
-      </Drawer>
+      </ActionScreen>
 
       <Drawer
         open={canFilter && filtersOpen}

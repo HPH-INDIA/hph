@@ -1,9 +1,14 @@
-import { useId, useRef, useState } from "react";
+import { SearchableMultiSelect } from "@/components/ui/SearchableMultiSelect";
+import { displayNumber } from "@/utils/displayNumber";
+import { useState } from "react";
 
 import { getErrorMessage } from "@/api/apiError";
 import { useGetManualTeamRangeQuery } from "@/api/reportsApi";
 import type { ManualTeamRangeEntry, ManualTeamRangeGroup } from "@/api/types";
+import { Button } from "@/components/ui/Button";
+import { inputClasses } from "@/components/ui/FormField";
 import { ManualRecordStatusIndicator } from "@/components/ui/ManualRecordStatusIndicator";
+import { PaginationControls } from "@/components/ui/PaginationControls";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { useAuth } from "@/features/auth/useAuth";
 
@@ -53,14 +58,18 @@ export function ProductionCards({ teams, label, compact = false, showApprovedCou
   );
 }
 
-export function PeriodRecordsTable({ entries, caption, multipleDays }: { entries: ManualTeamRangeEntry[]; caption: string; multipleDays: boolean }) {
+export function PeriodRecordsTable({ entries, caption, multipleDays, metric = "all", totalEntries = entries }: { totalEntries?: ManualTeamRangeEntry[]; entries: ManualTeamRangeEntry[]; caption: string; multipleDays: boolean; metric?: "all" | "production" | "time" }) {
+  const totalRecords = totalEntries.flatMap(entry => entry.records);
+  const production = sumManualProduction(totalRecords);
+  const showProduction = metric !== "time";
+  const showTime = metric !== "production";
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full text-left text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead className="bg-surface-muted text-xs uppercase tracking-wide text-content-muted">
           <tr>
-            {["User", ...(multipleDays ? ["Days submitted"] : []), "PVP", "Foundation", "Total", "Downtime (hours)", "Idle (hours)", "Leave (hours)", "Meeting (hours)", "Meetings", "Status"].map((title) => (
+            {["User", ...(multipleDays ? ["Days submitted"] : []), ...(showProduction ? ["PVP", "Foundation", "Total"] : []), ...(showTime ? ["Downtime (hours)", "Idle (hours)", "Leave (hours)", "Meeting (hours)", "Meetings"] : []), "Status"].map((title) => (
               <th key={title} scope="col" className="px-3 py-2 font-medium">{title}</th>
             ))}
           </tr>
@@ -75,13 +84,15 @@ export function PeriodRecordsTable({ entries, caption, multipleDays }: { entries
                   <span className="block whitespace-nowrap">{userName(user)}</span>
                 </th>
                 {multipleDays && <td className="px-3 py-3 tabular-nums text-content-secondary">{new Set(records.map((record) => record.date)).size}</td>}
-                <td className="px-3 py-3 tabular-nums text-content-secondary">{submitted ? number(counts.pvp) : "—"}</td>
-                <td className="px-3 py-3 tabular-nums text-content-secondary">{submitted ? number(counts.foundation) : "—"}</td>
-                <td className="px-3 py-3 font-semibold tabular-nums text-content-primary">{submitted ? number(counts.production) : "—"}</td>
-                {(["techIssuesDowntimeHours", "noInventoryIdleTimeHours", "leaveHours", "meetingEngagementHours"] as const).map((field) => (
-                  <td key={field} className="px-3 py-3 tabular-nums text-content-secondary">{submitted ? sumManualHours(records, field) : "—"}</td>
+                {showProduction && <>
+                  <td className="px-3 py-3 tabular-nums text-content-secondary">{submitted ? number(counts.pvp) : "—"}</td>
+                  <td className="px-3 py-3 tabular-nums text-content-secondary">{submitted ? number(counts.foundation) : "—"}</td>
+                  <td className="px-3 py-3 font-semibold tabular-nums text-content-primary">{submitted ? number(counts.production) : "—"}</td>
+                </>}
+                {showTime && (["techIssuesDowntimeHours", "noInventoryIdleTimeHours", "leaveHours", "meetingEngagementHours"] as const).map((field) => (
+                  <td key={field} className="px-3 py-3 tabular-nums text-content-secondary">{submitted ? displayNumber(sumManualHours(records, field)) : "—"}</td>
                 ))}
-                <td className="px-3 py-3 text-content-secondary">{formatManualMeetings(records)}</td>
+                {showTime && <td className="max-w-xs px-3 py-3 text-content-secondary">{formatManualMeetings(records)}</td>}
                 <td className="px-3 py-3">
                   {!submitted ? <span className="whitespace-nowrap text-content-muted">Not submitted</span> : records.length === 1 ? (
                     <div className="flex flex-col gap-1">
@@ -89,7 +100,7 @@ export function PeriodRecordsTable({ entries, caption, multipleDays }: { entries
                       {records[0].status === "rejected" && records[0].rejectionReason && <span className="text-xs text-content-muted">{records[0].rejectionReason}</span>}
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-1 text-xs">
+                    <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs">
                       {(["approved", "pending", "rejected"] as const).map((status) => {
                         const count = records.filter((record) => record.status === status).length;
                         return count > 0 && <span key={status} className={`whitespace-nowrap ${status === "rejected" ? "text-danger" : "text-content-secondary"}`}>{count} {status}</span>;
@@ -101,6 +112,12 @@ export function PeriodRecordsTable({ entries, caption, multipleDays }: { entries
             );
           })}
         </tbody>
+        <tfoot className="border-t-2 border-border bg-surface-muted font-semibold"><tr><th scope="row" className="px-3 py-3">Total · all matching people</th>
+          {multipleDays && <td className="px-3 py-3">{totalEntries.reduce((sum,entry) => sum + new Set(entry.records.map(record => record.date)).size,0)}</td>}
+          {showProduction && (["pvp","foundation","production"] as const).map(key => <td key={key} className="px-3 py-3">{number(production[key])}</td>)}
+          {showTime && (["techIssuesDowntimeHours","noInventoryIdleTimeHours","leaveHours","meetingEngagementHours"] as const).map(key => <td key={key} className="px-3 py-3">{displayNumber(sumManualHours(totalRecords,key))}</td>)}
+          {showTime && <td>—</td>}<td>—</td>
+        </tr></tfoot>
       </table>
     </div>
   );
@@ -109,8 +126,9 @@ export function PeriodRecordsTable({ entries, caption, multipleDays }: { entries
 export function ManagerManualReport({ window }: { window: ManualReportWindow }) {
   const { user } = useAuth();
   const [selectedTeamKey, setSelectedTeamKey] = useState<string | null>(null);
-  const tabsId = useId();
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [group, setGroup] = useState<"qa" | "coders">("coders");
+  const [metric, setMetric] = useState<"production" | "time">("production");
+  const [page, setPage] = useState(1);
   const { currentData, isFetching, isError, error, refetch } = useGetManualTeamRangeQuery(
     { ...window, viewerId: user?.id ?? 0, viewerRole: user?.role.roleType ?? null },
     { refetchOnMountOrArgChange: true, skip: !user },
@@ -121,78 +139,67 @@ export function ManagerManualReport({ window }: { window: ManualReportWindow }) 
   const period = windowLabel(window);
   const multipleDays = window.fromDate !== window.toDate;
   const activeName = activeTeam?.lead ? `${userName(activeTeam.lead)}’s team` : "Unassigned coders";
+  const activeGroup = activeTeam?.lead ? group : "coders";
+  const availableEntries = activeGroup === "qa" && activeTeam?.lead
+    ? [{ user: activeTeam.lead, records: activeTeam.leadRecords }]
+    : activeTeam?.coders ?? [];
+  const [selectedUserIds, setSelectedUserIds] = useState<string[] | null>(null);
+  const entries = selectedUserIds === null ? availableEntries : availableEntries.filter(entry => selectedUserIds.includes(String(entry.user.id)));
+  const pageSize = 6;
+  const totalPages = Math.max(1, Math.ceil(entries.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const visibleEntries = entries.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const selectedRecords = entries.flatMap((entry) => entry.records);
+  const selectedTotal = sumManualProduction(selectedRecords).production;
+  const selectedApproved = sumManualProduction(selectedRecords.filter((record) => record.status === "approved")).production;
 
   return (
-    <section className="flex min-w-0 flex-col gap-5 rounded-lg border border-border bg-surface p-4">
-
-      <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] lg:items-start">
+    <div className="source-report">
+      {!isError && report && <ProductionCards teams={teams} label="All teams manual production" compact showApprovedCount />}
+    <section className="source-record-panel flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-surface p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="font-semibold text-content-primary">All teams · {period}</h3>
-          <p className="mt-1 text-xs text-content-muted">Totals combine all submitted records; approved charts are shown separately.</p>
+          <h3 data-metric="manual" className="metric-label font-semibold text-content-primary">Manual team records</h3>
+          <p className="mt-1 text-xs text-content-muted">{period}</p>
         </div>
-        {!isError && report && <ProductionCards teams={teams} label="All teams production" compact showApprovedCount />}
+
       </div>
       {isError && <ErrorState message={`Couldn’t load team records. ${getErrorMessage(error)}`} onRetry={refetch} />}
       {!isError && !report && <LoadingState label="Loading team production…" />}
-      {!isError && report && (
-        <>
-          {isFetching && <p role="status" className="text-sm text-content-muted">Updating team production…</p>}
-          {teams.length === 0 && <EmptyState title="No team members for this period" />}
-          {activeTeam && (
-            <div className="min-w-0" aria-busy={isFetching}>
-              <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <div role="tablist" aria-label="Lead teams" className="flex w-max min-w-full items-end border-b border-border-strong pt-2">
-                  {teams.map((team, index) => {
-                    const key = teamKey(team);
-                    const isActive = team === activeTeam;
-                    return (
-                      <button key={key} ref={(element) => { tabRefs.current[index] = element; }} type="button" role="tab"
-                        id={`${tabsId}-tab-${key}`} aria-controls={`${tabsId}-panel`} aria-selected={isActive} tabIndex={isActive ? 0 : -1}
-                        onClick={() => setSelectedTeamKey(key)}
-                        onKeyDown={(event) => {
-                          let nextIndex: number;
-                          if (event.key === "ArrowRight") nextIndex = (index + 1) % teams.length;
-                          else if (event.key === "ArrowLeft") nextIndex = (index - 1 + teams.length) % teams.length;
-                          else if (event.key === "Home") nextIndex = 0;
-                          else if (event.key === "End") nextIndex = teams.length - 1;
-                          else return;
-                          event.preventDefault();
-                          setSelectedTeamKey(teamKey(teams[nextIndex]));
-                          tabRefs.current[nextIndex]?.focus();
-                        }}
-                        className={`relative -mb-px -mr-px inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-t-md border border-border-strong px-5 py-3 text-sm transition-colors focus-visible:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-brand-600 ${isActive ? "z-10 min-h-14 border-b-surface bg-surface font-semibold text-brand-700" : "min-h-11 bg-surface-muted font-medium text-content-secondary hover:bg-brand-50 hover:text-brand-700"}`}>
-                        {team.lead ? userName(team.lead) : "Unassigned"} ({team.coders.length})
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <section role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-tab-${teamKey(activeTeam)}`} tabIndex={0}
-                className="flex flex-col gap-4 rounded-b-lg border-x border-b border-border-strong bg-surface p-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">
-                <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] lg:items-start">
-                  <div>
-                    <h3 className="font-semibold text-content-primary">{activeName}</h3>
-                    <p className="text-sm text-content-muted">{activeTeam.coders.filter((coder) => coder.records.length > 0).length} of {activeTeam.coders.length} coders submitted {multipleDays ? "in this period" : "for this day"} · {period}</p>
-                  </div>
-                  <ProductionCards teams={[activeTeam]} label="Selected team production" compact />
-                </div>
-                {activeTeam.lead && (
-                  <div className="flex flex-col gap-2">
-                    <h4 className="text-sm font-semibold text-content-secondary">QA production · {multipleDays ? "Lead records" : "Lead daily record"}</h4>
-                    <PeriodRecordsTable entries={[{ user: activeTeam.lead, records: activeTeam.leadRecords }]} caption={`QA production for ${activeName}, ${period}`} multipleDays={multipleDays} />
-                  </div>
-                )}
-                <div className="flex flex-col gap-2">
-                  <h4 className="text-sm font-semibold text-content-secondary">Coder production</h4>
-                  {activeTeam.coders.length === 0 ? <p className="text-sm text-content-muted">No coders assigned to this team for this period.</p> : (
-                    <PeriodRecordsTable entries={activeTeam.coders} caption={`Coder production for ${activeName}, ${period}`} multipleDays={multipleDays} />
-                  )}
-                </div>
-              </section>
-            </div>
-          )}
-        </>
-      )}
+      {!isError && report && teams.length === 0 && <EmptyState title="No team members for this period" />}
+      {!isError && report && activeTeam && <>
+        <div className="flex flex-wrap items-end gap-4 border-y border-border py-3">
+          <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs font-medium text-content-muted">
+            Lead team
+            <select className={inputClasses} value={teamKey(activeTeam)} onChange={(event) => { setSelectedTeamKey(event.target.value); setSelectedUserIds(null); setPage(1); }}>
+              {teams.map((team) => <option key={teamKey(team)} value={teamKey(team)}>{team.lead ? userName(team.lead) : "Unassigned"} ({team.coders.length} coders)</option>)}
+            </select>
+          </label>
+          <SearchableMultiSelect label="Users" noun="users" value={selectedUserIds ?? availableEntries.map(entry => String(entry.user.id))}
+            options={availableEntries.map(entry => ({value:String(entry.user.id),label:userName(entry.user)}))} onChange={ids => {setSelectedUserIds(ids);setPage(1);}} />
+          <div role="group" aria-label="Team records" className="flex gap-1 rounded-lg bg-surface-muted p-1">
+            <Button type="button" variant={activeGroup === "qa" ? "primary" : "ghost"} disabled={!activeTeam.lead} aria-pressed={activeGroup === "qa"} onClick={() => { setGroup("qa"); setSelectedUserIds(null); setPage(1); }}>QA</Button>
+            <Button type="button" variant={activeGroup === "coders" ? "primary" : "ghost"} aria-pressed={activeGroup === "coders"} onClick={() => { setGroup("coders"); setSelectedUserIds(null); setPage(1); }}>Coders ({activeTeam.coders.length})</Button>
+          </div>
+          <label className="flex min-w-40 flex-col gap-1 text-xs font-medium text-content-muted">
+            Show metrics
+            <select className={inputClasses} value={metric} onChange={(event) => setMetric(event.target.value as "production" | "time")}>
+              <option value="production">Charts & status</option><option value="time">Time & meetings</option>
+            </select>
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-sm font-semibold text-content-primary">{activeName} · {activeGroup === "qa" ? "QA" : "Coder"} records</h4>
+          <p className="text-xs text-content-muted">Submitted <strong className="text-content-primary">{number(selectedTotal)}</strong> · Approved <strong className="text-content-primary">{number(selectedApproved)}</strong></p>
+        </div>
+        {isFetching && <p role="status" className="text-xs text-content-muted">Updating team production…</p>}
+        {entries.length === 0 ? <EmptyState title="No coders assigned to this team for this period" /> : <div className="source-table-scroll" tabIndex={0} role="region" aria-label="Manual team production records" aria-busy={isFetching}>
+          <PeriodRecordsTable totalEntries={entries} entries={visibleEntries} caption={`${activeGroup === "qa" ? "QA" : "Coder"} records for ${activeName}, ${period}`} multipleDays={multipleDays} metric={metric} />
+          <PaginationControls page={currentPage} pageSize={pageSize} total={entries.length} totalPages={totalPages} onPageChange={setPage} />
+        </div>}
+        <p className="text-xs text-content-muted">Submitted totals include pending and rejected entries. Approved totals remain separate. Switch metrics to see time and meeting details.</p>
+      </>}
     </section>
+    </div>
   );
 }

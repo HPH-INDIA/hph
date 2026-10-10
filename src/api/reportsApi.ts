@@ -16,6 +16,8 @@ import type {
   KaironCompletedRecordQuery,
   KaironCompletedUserQuery,
   KaironCompletedUserSummary,
+  KaironHoldQuery,
+  KaironHoldSummary,
   KaironLeadTeamRange,
   KaironManagerTeamRange,
   KaironTeamRecordQuery,
@@ -32,6 +34,9 @@ import type {
   PaginationQuery,
   SelfKaironChartQuery,
 } from "./types";
+
+// The viewer participates in the cache key, never in server authorization.
+type KaironHoldRequest = { viewerId: number; filters: KaironHoldQuery };
 
 type ReportPeriodQuery = PaginationQuery & { fromDate?: string; toDate?: string };
 
@@ -69,6 +74,14 @@ export const reportsApi = apiSlice.injectEndpoints({
         { type: "Team" },
         { type: "Users", id: "LIST" },
       ],
+    }),
+    getKaironHolds: builder.query<PaginatedResult<KaironChartRecord>, KaironHoldRequest>({
+      query: ({ filters }) => ({ url: `/reports/kairon/holds${buildQueryString(filters)}` }),
+      providesTags: (result) => [...providesList("KaironChartRecords", result?.items), { type: "Team" }, { type: "Users", id: "LIST" }],
+    }),
+    getKaironHoldSummary: builder.query<KaironHoldSummary, KaironHoldRequest>({
+      query: ({ filters }) => ({ url: `/reports/kairon/holds-summary${buildQueryString(filters)}` }),
+      providesTags: [{ type: "KaironChartRecords", id: "LIST" }, { type: "Team" }, { type: "Users", id: "LIST" }],
     }),
     getKaironTeamHolds: builder.query<PaginatedResult<KaironChartRecord>, PaginationQuery>({
       query: (args) => ({ url: `/reports/kairon/team-holds${buildQueryString(args)}` }),
@@ -134,6 +147,21 @@ export const reportsApi = apiSlice.injectEndpoints({
       query: (args) => ({ url: `/dashboards/manager${buildQueryString(args)}` }),
       providesTags: [{ type: "CodingDashboard" }, { type: "Users", id: "LIST" }, { type: "Team" }],
     }),
+    getManagerCoderSelection: builder.query<ManagerDashboardSummary[], { scope: ManagerDashboardQuery; coderIds: number[] }>({
+      async queryFn({ scope, coderIds }, _api, _options, query) {
+        const data: ManagerDashboardSummary[] = [];
+        const ids = [...new Set(coderIds)];
+        for (let index = 0; index < ids.length; index += 3) {
+          const results = await Promise.all(ids.slice(index, index + 3).map(coderId => query({ url: `/dashboards/manager${buildQueryString({ ...scope, coderId })}` })));
+          for (const result of results) {
+            if (result.error) return { error: result.error };
+            data.push(result.data as ManagerDashboardSummary);
+          }
+        }
+        return { data };
+      },
+      providesTags: [{ type: "CodingDashboard" }, { type: "Users", id: "LIST" }, { type: "Team" }],
+    }),
     getMyEfficiency: builder.query<EfficiencySummary, CodingDashboardQuery | void>({
       query: (args) => ({ url: `/dashboards/my-efficiency${buildQueryString({ ...args })}` }),
       providesTags: [{ type: "CodingDashboard" }],
@@ -152,6 +180,8 @@ export const {
   useGetKaironCompletedRecordsQuery,
   useGetKaironLeadTeamRangeQuery,
   useGetKaironManagerTeamRangeQuery,
+  useGetKaironHoldsQuery,
+  useGetKaironHoldSummaryQuery,
   useGetKaironTeamHoldsQuery,
   useGetKaironTeamRecordsQuery,
   useGetMyManualRecordsQuery,
@@ -165,5 +195,6 @@ export const {
   useGetLeadDashboardQuery,
   useGetLeadCoderPerformanceQuery,
   useGetManagerDashboardQuery,
+  useGetManagerCoderSelectionQuery,
   useGetMonthlyGoalQuery,
 } = reportsApi;

@@ -6,8 +6,9 @@ import { ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { CoderPerformanceTable } from "./CoderPerformanceTable";
 import { dayLabel } from "./performanceView";
 
-export function ManagerCoderDay({ date, scope, members, onPick }: {
+export function ManagerCoderDay({ date, scope, members, onPick, paginate = true }: {
   date: string;
+  paginate?: boolean;
   scope: ManagerDashboardQuery;
   members: CoderPerformanceMember[];
   onPick: (userId: number) => void;
@@ -15,5 +16,5 @@ export function ManagerCoderDay({ date, scope, members, onPick }: {
   const result = useGetManagerDashboardQuery(managerCoderDayQuery(scope, date));
   if (result.error) return <ErrorState message={getErrorMessage(result.error)} onRetry={result.refetch} />;
   if (!result.currentData) return <LoadingState label="Loading this day’s coder results…" />;
-  return <CoderPerformanceTable members={managerCoderDay(members, result.currentData.members)} caption={`Coder results · ${dayLabel(date, true)}`} onPick={onPick} day />;
+  return <CoderPerformanceTable paginate={paginate} enableEfficiencyFilters members={managerCoderDay(members, result.currentData.members)} caption={`Coder results · ${dayLabel(date, true)}`} onPick={onPick} day />;
 }

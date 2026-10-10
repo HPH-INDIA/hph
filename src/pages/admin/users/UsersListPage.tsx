@@ -1,3 +1,4 @@
+import { SearchableMultiSelect } from "@/components/ui/SearchableMultiSelect";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -30,14 +31,16 @@ export function UsersListPage() {
   const projectName = (id: number | null) => projects.find((p) => p.id === id)?.name ?? "—";
   const [statusTab, setStatusTab] = useState<UserStatusFilter>("all");
   const { data: fetchedUsers, isLoading, isError, refetch } = useListUsersQuery(statusTab);
-  const users = fetchedUsers?.filter((user) => user.role.roleType !== "super_admin");
+  const availableUsers = fetchedUsers?.filter((user) => user.role.roleType !== "super_admin");
+  const [selectedIds, setSelectedIds] = useState<string[] | null>(null);
+  const users = selectedIds === null ? availableUsers : availableUsers?.filter(user => selectedIds.includes(String(user.id)));
   const { canManageRoleType, canWriteFeature, canManageUserIdentity } = useAuth();
   const canWriteUsers = canWriteFeature("user_management");
 
   const [deactivateUser, { isLoading: isDeactivating }] = useDeactivateUserMutation();
   const [pendingDeactivate, setPendingDeactivate] = useState<AdminUser | null>(null);
   const [lastWorkingDay, setLastWorkingDay] = useState(localDateValue());
-  const userNameById = new Map(users?.map((user) => [user.id, `${user.first_name} ${user.last_name}`]));
+  const userNameById = new Map(availableUsers?.map((user) => [user.id, `${user.first_name} ${user.last_name}`]));
 
   const handleDeactivate = async () => {
     if (!pendingDeactivate || !lastWorkingDay) return;
@@ -73,7 +76,7 @@ export function UsersListPage() {
         {TABS.map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setStatusTab(tab.key)}
+            onClick={() => {setStatusTab(tab.key);setSelectedIds(null);}}
             className={`px-3 py-2 text-sm font-medium ${
               statusTab === tab.key
                 ? "border-b-2 border-brand-600 text-brand-700"
@@ -85,6 +88,8 @@ export function UsersListPage() {
         ))}
       </div>
 
+      <SearchableMultiSelect label="Users" noun="users" value={selectedIds ?? (availableUsers ?? []).map(user => String(user.id))} onChange={setSelectedIds}
+        options={(availableUsers ?? []).map(user => ({value:String(user.id),label:`${user.first_name} ${user.last_name}`}))} />
       {isLoading && <LoadingState label="Loading users…" />}
       {isError && <ErrorState message="Couldn't load users." onRetry={refetch} />}
       {!isLoading && !isError && users && users.length === 0 && <EmptyState title="No users in this view" />}

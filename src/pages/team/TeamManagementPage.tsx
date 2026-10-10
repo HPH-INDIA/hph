@@ -1,30 +1,28 @@
-import { Fragment, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 
 import { getErrorMessage } from "@/api/apiError";
 import {
-  useChangeStageTargetMutation,
   useCreateTeamCohortMutation,
-  useGetTeamCoderOverviewQuery,
   useListEligibleCohortMembersQuery,
-  useListStageTargetRulesQuery,
   useListTeamCohortsQuery,
 } from "@/api/cohortsApi";
-import type { CoderStageFilter, StageTargetRule, TargetStageCode, TeamLeadSummary } from "@/api/types";
+import type { TeamLeadSummary } from "@/api/types";
 import { useAssignManagerTeamMutation, useGetMyManagerTeamQuery } from "@/api/usersApi";
 import { Button } from "@/components/ui/Button";
-import { Drawer } from "@/components/ui/Drawer";
+import { ActionScreen } from "@/components/ui/ActionScreen";
 import { inputClasses } from "@/components/ui/FormField";
 import { PaginationControls } from "@/components/ui/PaginationControls";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
+import { TeamStagesPanel } from "./TeamStagesPanel";
 import { useAuth } from "@/features/auth/useAuth";
 
 type AssignmentView = "list" | "leads";
-type TeamSection = "overview" | "assignments" | "cohorts" | "targets";
+type TeamSection = "stages" | "assignments" | "cohorts";
 
 export function TeamManagementPage() {
   const { canWriteFeature } = useAuth();
   const canManageTeam = canWriteFeature("user_management");
-  const [section, setSection] = useState<TeamSection>("overview");
+  const [section, setSection] = useState<TeamSection>("stages");
   const [view, setView] = useState<AssignmentView>("list");
   const [page, setPage] = useState(1);
   const [leadId, setLeadId] = useState<number | null>(null);
@@ -32,7 +30,7 @@ export function TeamManagementPage() {
   const [search, setSearch] = useState("");
   const [selectedCoderIds, setSelectedCoderIds] = useState<Set<number>>(new Set());
   const [destinationLeadId, setDestinationLeadId] = useState("");
-  const [movingCoderId, setMovingCoderId] = useState<number | null>(null);
+  const [assignmentIds, setAssignmentIds] = useState<number[] | null>(null);
 
   const { data, isLoading, isFetching, isError, refetch } = useGetMyManagerTeamQuery({
     page,
@@ -68,20 +66,19 @@ export function TeamManagementPage() {
     return true;
   };
 
-  const moveOneCoder = async (coderId: number, nextLeadId: number) => {
-    setMovingCoderId(coderId);
-    try {
-      await assignCoders([coderId], nextLeadId);
-    } finally {
-      setMovingCoderId(null);
+  const moveSelected = async () => {
+    const nextLeadId = Number(destinationLeadId);
+    if (!nextLeadId || !assignmentIds?.length) return;
+    const succeeded = await assignCoders(assignmentIds, nextLeadId);
+    if (succeeded) {
+      setDestinationLeadId("");
+      setAssignmentIds(null);
     }
   };
 
-  const moveSelected = async () => {
-    const nextLeadId = Number(destinationLeadId);
-    if (!nextLeadId || selectedCoderIds.size === 0) return;
-    const succeeded = await assignCoders(Array.from(selectedCoderIds), nextLeadId);
-    if (succeeded) setDestinationLeadId("");
+  const openAssignment = (ids: number[]) => {
+    setDestinationLeadId("");
+    setAssignmentIds(ids);
   };
 
   const toggleCoder = (coderId: number) => {
@@ -119,22 +116,20 @@ export function TeamManagementPage() {
       </div>
 
       <div className="flex gap-1 border-b border-border">
-        <ViewButton active={section === "overview"} onClick={() => setSection("overview")}>Overview</ViewButton>
+        <ViewButton active={section === "stages"} onClick={() => setSection("stages")}>Stages</ViewButton>
         {canManageTeam && (
           <>
             <ViewButton active={section === "assignments"} onClick={() => setSection("assignments")}>Assignments</ViewButton>
             <ViewButton active={section === "cohorts"} onClick={() => setSection("cohorts")}>Cohorts</ViewButton>
-            <ViewButton active={section === "targets"} onClick={() => setSection("targets")}>Stage targets</ViewButton>
           </>
         )}
       </div>
 
-      {section === "overview" ? (
-        <CoderOverviewPanel leads={leads} />
+      {section === "stages" ? (
+        <TeamStagesPanel leads={leads} canManageTargets={canManageTeam} />
       ) : section === "cohorts" ? (
         <CohortsPanel />
-      ) : section === "targets" ? (
-        <StageTargetsPanel />
+
       ) : (
         <>
 
@@ -204,19 +199,8 @@ export function TeamManagementPage() {
           {selectedCoderIds.size > 0 && (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-brand-200 bg-brand-50 p-3">
               <span className="text-sm font-medium text-brand-700">{selectedCoderIds.size} coder(s) selected</span>
-              <select
-                aria-label="Move selected coders to lead"
-                className={`${inputClasses} min-w-56`}
-                value={destinationLeadId}
-                onChange={(event) => setDestinationLeadId(event.target.value)}
-              >
-                <option value="">Choose destination lead…</option>
-                {leads.map((lead) => (
-                  <option key={lead.id} value={lead.id}>{lead.firstName} {lead.lastName}</option>
-                ))}
-              </select>
-              <Button disabled={!destinationLeadId} isLoading={isAssigning} onClick={moveSelected}>
-                Move selected
+              <Button disabled={isAssigning} onClick={() => openAssignment([...selectedCoderIds])}>
+                Assign selected
               </Button>
               <Button variant="ghost" onClick={() => setSelectedCoderIds(new Set())}>Clear selection</Button>
             </div>
@@ -236,7 +220,7 @@ export function TeamManagementPage() {
                       </th>
                       <th className="px-4 py-3 font-medium">Coder</th>
                       <th className="px-4 py-3 font-medium">Current lead</th>
-                      <th className="px-4 py-3 font-medium">Assign or move to</th>
+                      <th className="px-4 py-3 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -259,21 +243,8 @@ export function TeamManagementPage() {
                             {currentLead ? `${currentLead.firstName} ${currentLead.lastName}` : "Unassigned"}
                           </td>
                           <td className="px-4 py-3">
-                            <select
-                              aria-label={`Assign ${coder.first_name} ${coder.last_name} to lead`}
-                              className={`${inputClasses} min-w-56`}
-                              value={coder.reports_to_id ?? ""}
-                              disabled={movingCoderId === coder.id || isAssigning}
-                              onChange={(event) => {
-                                const nextLeadId = Number(event.target.value);
-                                if (nextLeadId) void moveOneCoder(coder.id, nextLeadId);
-                              }}
-                            >
-                              <option value="" disabled>Select a lead…</option>
-                              {leads.map((lead) => (
-                                <option key={lead.id} value={lead.id}>{lead.firstName} {lead.lastName}</option>
-                              ))}
-                            </select>
+                            <Button type="button" variant="secondary" disabled={isAssigning}
+                              aria-label={`Assign ${coder.first_name} ${coder.last_name} to lead`} onClick={() => openAssignment([coder.id])}>Change lead</Button>
                           </td>
                         </tr>
                       );
@@ -294,115 +265,35 @@ export function TeamManagementPage() {
       )}
         </>
       )}
-    </div>
-  );
-}
-
-const CODER_STAGES: CoderStageFilter[] = ["Training", "M1", "M2", "M3", "M4", "Steady State", "Unassigned"];
-
-function CoderOverviewPanel({ leads }: { leads: TeamLeadSummary[] }) {
-  const [page, setPage] = useState(1);
-  const [cohortId, setCohortId] = useState<number | null>(null);
-  const [leadId, setLeadId] = useState<number | null>(null);
-  const [stageCode, setStageCode] = useState<CoderStageFilter | null>(null);
-  const cohorts = useListTeamCohortsQuery();
-  const overview = useGetTeamCoderOverviewQuery({ page, pageSize: 25, cohortId, leadId, stageCode });
-
-  const updateCohort = (value: string) => {
-    setCohortId(value === "ALL" ? null : Number(value));
-    setPage(1);
-  };
-  const updateLead = (value: string) => {
-    setLeadId(value === "ALL" ? null : Number(value));
-    setPage(1);
-  };
-  const updateStage = (value: string) => {
-    setStageCode(value === "ALL" ? null : value as CoderStageFilter);
-    setPage(1);
-  };
-
-  if (overview.isLoading || cohorts.isLoading) return <LoadingState label="Loading coder overview…" />;
-  if (overview.error) return <ErrorState message={getErrorMessage(overview.error)} onRetry={overview.refetch} />;
-  if (cohorts.error) return <ErrorState message={getErrorMessage(cohorts.error)} onRetry={cohorts.refetch} />;
-
-  const result = overview.data;
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h2 className="text-base font-semibold text-content-primary">Coder overview</h2>
-          <p className="text-sm text-content-muted">Current cohort, stage, target, and reporting lead for every coder.</p>
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1.5 text-xs font-medium text-content-secondary">
-            Cohort
-            <select className={inputClasses} value={cohortId ?? "ALL"} onChange={(event) => updateCohort(event.target.value)}>
-              <option value="ALL">All cohorts</option>
-              <option value={0}>Unassigned / BAU</option>
-              {(cohorts.data ?? []).map((cohort) => <option key={cohort.id} value={cohort.id}>{cohort.label}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1.5 text-xs font-medium text-content-secondary">
-            Lead
-            <select className={inputClasses} value={leadId ?? "ALL"} onChange={(event) => updateLead(event.target.value)}>
-              <option value="ALL">All leads</option>
-              <option value={0}>Unassigned</option>
+      <ActionScreen open={canManageTeam && assignmentIds !== null} onClose={() => { if (!isAssigning) setAssignmentIds(null); }}
+        title="Assign team members" description="Review the selected employees and choose their destination lead." widthClass="max-w-3xl">
+        <form className="flex flex-col gap-5 rounded-lg border border-border bg-surface p-5"
+          onSubmit={(event) => { event.preventDefault(); void moveSelected(); }}>
+          <section>
+            <h2 className="font-semibold text-content-primary">Selected employees ({assignmentIds?.length ?? 0})</h2>
+            <ul className="mt-3 divide-y divide-border">
+              {coders.filter((coder) => assignmentIds?.includes(coder.id)).map((coder) => {
+                const lead = leads.find((candidate) => candidate.id === coder.reports_to_id);
+                return <li key={coder.id} className="flex flex-wrap justify-between gap-2 py-3 text-sm">
+                  <span className="font-medium">{coder.first_name} {coder.last_name}</span>
+                  <span className="text-content-muted">Current lead: {lead ? `${lead.firstName} ${lead.lastName}` : "Unassigned"}</span>
+                </li>;
+              })}
+            </ul>
+          </section>
+          <label className="flex max-w-md flex-col gap-2 text-sm font-medium">
+            Destination lead
+            <select className={inputClasses} required value={destinationLeadId} disabled={isAssigning} onChange={(event) => setDestinationLeadId(event.target.value)}>
+              <option value="">Choose a lead…</option>
               {leads.map((lead) => <option key={lead.id} value={lead.id}>{lead.firstName} {lead.lastName}</option>)}
             </select>
           </label>
-          <label className="flex flex-col gap-1.5 text-xs font-medium text-content-secondary">
-            Stage
-            <select className={inputClasses} value={stageCode ?? "ALL"} onChange={(event) => updateStage(event.target.value)}>
-              <option value="ALL">All stages</option>
-              {CODER_STAGES.map((stage) => <option key={stage} value={stage}>{stage === "Unassigned" ? "No current stage" : stage}</option>)}
-            </select>
-          </label>
-        </div>
-      </div>
-
-      {!result || result.items.length === 0 ? (
-        <EmptyState title="No coders match these filters" />
-      ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-surface-muted text-xs uppercase tracking-wide text-content-muted">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Coder</th>
-                  <th className="px-4 py-3 font-medium">Role</th>
-                  <th className="px-4 py-3 font-medium">Cohort</th>
-                  <th className="px-4 py-3 font-medium">Current stage</th>
-                  <th className="px-4 py-3 font-medium">Daily target goal</th>
-                  <th className="px-4 py-3 font-medium">Lead</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {result.items.map((row) => (
-                  <tr key={row.coder.id}>
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-content-primary">{row.coder.firstName} {row.coder.lastName}</div>
-                    </td>
-                    <td className="px-4 py-3 capitalize text-content-secondary">{row.coder.roleType}</td>
-                    <td className="px-4 py-3 text-content-secondary">{row.cohort?.label ?? "Unassigned / BAU"}</td>
-                    <td className="px-4 py-3 text-content-secondary">{row.currentStage ?? "No current stage"}</td>
-                    <td className="px-4 py-3 text-content-secondary">{row.dailyTarget == null ? "—" : `${row.dailyTarget} charts/day`}</td>
-                    <td className="px-4 py-3 text-content-secondary">
-                      {row.lead ? `${row.lead.firstName} ${row.lead.lastName}` : "Unassigned"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex gap-3 border-t border-border pt-4">
+            <Button type="button" variant="secondary" disabled={isAssigning} onClick={() => setAssignmentIds(null)}>Cancel</Button>
+            <Button type="submit" disabled={!destinationLeadId || !assignmentIds?.length} isLoading={isAssigning}>Confirm assignment</Button>
           </div>
-          <PaginationControls
-            page={result.page}
-            pageSize={result.pageSize}
-            total={result.total}
-            totalPages={result.totalPages}
-            onPageChange={setPage}
-          />
-        </div>
-      )}
+        </form>
+      </ActionScreen>
     </div>
   );
 }
@@ -448,7 +339,7 @@ function CohortsPanel() {
         <Button onClick={() => setShowForm(true)}>Create cohort</Button>
       </div>
 
-      <Drawer
+      <ActionScreen
         open={showForm}
         onClose={() => setShowForm(false)}
         title="Create cohort"
@@ -500,7 +391,7 @@ function CohortsPanel() {
             <span className="text-xs text-content-muted">Members begin Training on the batch start date.</span>
           </div>
         </form>
-      </Drawer>
+      </ActionScreen>
 
       {(cohorts.data ?? []).length === 0 ? (
         <EmptyState title="No cohorts have been created" />
@@ -572,124 +463,6 @@ function CohortsPanel() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-const TARGET_STAGES: TargetStageCode[] = ["M1", "M2", "M3", "M4", "Steady State"];
-
-function StageTargetsPanel() {
-  const rules = useListStageTargetRulesQuery();
-  const [changeTarget, changeState] = useChangeStageTargetMutation();
-  const [stage, setStage] = useState<TargetStageCode>("M1");
-  const [target, setTarget] = useState(10);
-  const [effectiveFrom, setEffectiveFrom] = useState(localDateValue());
-  const [reason, setReason] = useState("");
-  const [editing, setEditing] = useState(false);
-
-  const today = localDateValue();
-  const { currentByStage, scheduledByStage } = useMemo(() => {
-    const current = new Map<string, StageTargetRule>();
-    const scheduled = new Map<string, StageTargetRule>();
-    for (const rule of rules.data ?? []) {
-      if (rule.effective_from <= today && (!rule.effective_to || today < rule.effective_to)) {
-        current.set(rule.stage_code, rule);
-      } else if (rule.effective_from > today) {
-        scheduled.set(rule.stage_code, rule);
-      }
-    }
-    return { currentByStage: current, scheduledByStage: scheduled };
-  }, [rules.data, today]);
-
-  const beginChange = (nextStage: TargetStageCode) => {
-    setStage(nextStage);
-    setTarget(currentByStage.get(nextStage)?.daily_target ?? 0);
-    setEffectiveFrom(localDateValue());
-    setReason("");
-    setEditing(true);
-  };
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    const result = await changeTarget({ stageCode: stage, effectiveFrom, dailyTarget: target, reason: reason.trim() || null });
-    if ("error" in result) return;
-    setEditing(false);
-  };
-
-  if (rules.isLoading) return <LoadingState label="Loading stage targets…" />;
-  if (rules.error) return <ErrorState message={getErrorMessage(rules.error)} onRetry={rules.refetch} />;
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-base font-semibold text-content-primary">Stage targets</h2>
-        <p className="text-sm text-content-muted">Changes apply from their effective date; historical evaluations keep their original target.</p>
-      </div>
-
-      <Drawer
-        open={editing}
-        onClose={() => setEditing(false)}
-        title={`Change ${stage} target`}
-        description="Schedule an effective-dated target without changing historical evaluations."
-      >
-        <form onSubmit={submit}>
-          <div className="grid gap-4">
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-content-secondary">
-              New daily target
-              <input className={inputClasses} type="number" min={0} required value={target} onChange={(event) => setTarget(Number(event.target.value))} />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-content-secondary">
-              Effective from
-              <input className={inputClasses} type="date" min={localDateValue()} required value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-content-secondary">
-              Reason (optional)
-              <input className={inputClasses} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Operational target update" />
-            </label>
-          </div>
-          <p className="mt-3 text-xs text-content-muted">
-            The current {stage} target of {currentByStage.get(stage)?.daily_target ?? "—"} remains valid before {effectiveFrom}.
-          </p>
-          <div className="mt-4 flex gap-2">
-            <Button type="submit" isLoading={changeState.isLoading}>Save effective-dated target</Button>
-            <Button type="button" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
-          </div>
-        </form>
-      </Drawer>
-
-      <div className="overflow-hidden rounded-lg border border-border bg-surface">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-surface-muted text-xs uppercase tracking-wide text-content-muted">
-            <tr>
-              <th className="px-4 py-3 font-medium">Stage</th>
-              <th className="px-4 py-3 font-medium">Current target</th>
-              <th className="px-4 py-3 font-medium">Effective from</th>
-              <th className="px-4 py-3 font-medium">Scheduled change</th>
-              <th className="px-4 py-3 font-medium">History</th>
-              <th className="px-4 py-3 font-medium"><span className="sr-only">Action</span></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {TARGET_STAGES.map((code) => {
-              const current = currentByStage.get(code);
-              const scheduled = scheduledByStage.get(code);
-              const historyCount = (rules.data ?? []).filter((rule) => rule.stage_code === code).length;
-              return (
-                <tr key={code}>
-                  <td className="px-4 py-3 font-medium text-content-primary">{code}</td>
-                  <td className="px-4 py-3 text-content-secondary">{current?.daily_target ?? "—"} charts/day</td>
-                  <td className="px-4 py-3 text-content-secondary">{current?.effective_from ?? "—"}</td>
-                  <td className="px-4 py-3 text-content-secondary">
-                    {scheduled ? `${scheduled.daily_target} from ${scheduled.effective_from}` : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-content-secondary">{historyCount} version(s)</td>
-                  <td className="px-4 py-3 text-right"><Button variant="secondary" onClick={() => beginChange(code)}>Change target</Button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

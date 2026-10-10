@@ -3,9 +3,11 @@ import { buildQueryString } from "./queryString";
 import { notifyOnSettle } from "./notify";
 import type {
   ChangeStageTargetPayload,
+  ChangeFoundationTargetPayload,
   CodingUserSummary,
   CreateTeamCohortPayload,
   StageTargetRule,
+  StageTargetChangeResult,
   PaginatedResult,
   TeamCoderOverviewItem,
   TeamCoderOverviewQuery,
@@ -31,6 +33,7 @@ export const cohortsApi = apiSlice.injectEndpoints({
       invalidatesTags: [
         { type: "Cohorts", id: "LIST" },
         { type: "Cohorts", id: "ELIGIBLE" },
+        { type: "Team" },
       ],
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         await notifyOnSettle(dispatch, queryFulfilled);
@@ -40,9 +43,20 @@ export const cohortsApi = apiSlice.injectEndpoints({
       query: () => ({ url: "/stage-target-rules" }),
       providesTags: (result) => providesList("StageTargets", result),
     }),
-    changeStageTarget: builder.mutation<StageTargetRule, ChangeStageTargetPayload>({
+    listFoundationTargetRules: builder.query<StageTargetRule[], void>({
+      query: () => ({ url: "/team/foundation-target-rules" }),
+      providesTags: [{ type: "StageTargets", id: "FOUNDATION" }],
+    }),
+    changeFoundationTarget: builder.mutation<StageTargetChangeResult, ChangeFoundationTargetPayload>({
+      query: (body) => ({ url: "/team/foundation-targets/change", method: "POST", body }),
+      invalidatesTags: [{ type: "StageTargets", id: "FOUNDATION" }, { type: "Team" }, { type: "ManualDailyRecords" }, { type: "CodingDashboard" }],
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        await notifyOnSettle(dispatch, queryFulfilled);
+      },
+    }),
+    changeStageTarget: builder.mutation<StageTargetChangeResult, ChangeStageTargetPayload>({
       query: (body) => ({ url: "/team/stage-targets/change", method: "POST", body }),
-      invalidatesTags: [{ type: "StageTargets", id: "LIST" }, { type: "CodingDashboard" }],
+      invalidatesTags: [{ type: "StageTargets", id: "LIST" }, { type: "CodingDashboard" }, { type: "Team" }, { type: "ManualDailyRecords" }],
       async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
         await notifyOnSettle(dispatch, queryFulfilled);
       },
@@ -57,4 +71,6 @@ export const {
   useCreateTeamCohortMutation,
   useListStageTargetRulesQuery,
   useChangeStageTargetMutation,
+  useListFoundationTargetRulesQuery,
+  useChangeFoundationTargetMutation,
 } = cohortsApi;

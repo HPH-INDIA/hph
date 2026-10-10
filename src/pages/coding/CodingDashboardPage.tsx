@@ -1,3 +1,7 @@
+import { SearchableMultiSelect } from "@/components/ui/SearchableMultiSelect";
+import { metricTotals } from "@/pages/performance/metricTotals";
+import { displayNumber, displayCpd } from "@/utils/displayNumber";
+import { metricIdentity } from "@/components/ui/metricIdentity";
 import { SortableHeader } from "@/components/ui/SortableHeader";
 import { numericSortValue, sortTableRows, type SortColumn, type TableSort } from "@/components/ui/tableSort";
 import { useMemo, useState } from "react";
@@ -10,6 +14,7 @@ import { useListUsersQuery } from "@/api/usersApi";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
+import { PaginationControls } from "@/components/ui/PaginationControls";
 import { ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { useAuth } from "@/features/auth/useAuth";
 import { TeamPerformanceGraphs } from "@/pages/reports/ReportsOverviewTab";
@@ -18,6 +23,8 @@ type DateMode = "from_start" | "day" | "month" | "year" | "range";
 type Program = "ALL" | "PVP" | "FOUNDATION";
 type TableStageFilter = "ALL" | CoderStageFilter;
 type CoderEfficiencyView = "graph" | "list";
+
+const CODER_PAGE_SIZE = 8;
 
 const CODER_STAGES: CoderStageFilter[] = ["Training", "M1", "M2", "M3", "M4", "Steady State", "Unassigned"];
 
@@ -96,7 +103,7 @@ function savePeriodPreference(key: string, filters: DashboardFilters) {
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat("en-US").format(value);
+  return displayNumber(value);
 }
 
 function MetricIcon({ kind }: { kind: "charts" | "downtime" }) {
@@ -142,13 +149,14 @@ function ListViewIcon() {
 const efficiencyColumns: SortColumn<CodingDashboardCard>[] = [
   { key: "name", label: "Coder", value: (card) => `${card.firstName} ${card.lastName}` },
   ...([
-    ["manualCharts", "Manual charts"], ["kaironCharts", "Kairon charts"], ["adjustedTarget", "Adjusted target"],
-    ["productiveMinutes", "Productive hours"], ["calculatedDays", "Days"], ["manualEfficiencyPercent", "Manual efficiency"],
-    ["kaironEfficiencyPercent", "Kairon efficiency"], ["manualCpd", "Manual CPD"], ["kaironCpd", "Kairon CPD"], ["targetCpd", "Target CPD"],
+    ["kaironCharts", "Kairon charts"], ["manualCharts", "Manual charts"], ["adjustedTarget", "Adjusted target"],
+    ["productiveMinutes", "Productive hours"], ["calculatedDays", "Days"], ["kaironEfficiencyPercent", "Kairon efficiency"],
+    ["manualEfficiencyPercent", "Manual efficiency"], ["kaironCpd", "Kairon CPD"], ["manualCpd", "Manual CPD"], ["targetCpd", "Target CPD"],
   ] as const).map(([key, label]) => ({ key, label, value: (card: CodingDashboardCard) => numericSortValue(card.efficiency[key]), defaultDirection: "desc" as const })),
 ];
 
 export function CodingDashboardPage() {
+  const [tablePage, setTablePage] = useState(1);
   const [tableSort, setTableSort] = useState<TableSort>({ key: "name", direction: "asc" });
   const { user } = useAuth();
   const today = localDateValue();
@@ -175,7 +183,7 @@ export function CodingDashboardPage() {
   const [cohortId, setCohortId] = useState<"ALL" | number>("ALL");
   const [leadId, setLeadId] = useState<"ALL" | number>("ALL");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [tableUserIds, setTableUserIds] = useState<number[]>([]);
+  const [tableUserIds, setTableUserIds] = useState<number[] | null>(null);
   const [tableLeadId, setTableLeadId] = useState<"ALL" | number>("ALL");
   const [tableCohortId, setTableCohortId] = useState<"ALL" | number>("ALL");
   const [tableStage, setTableStage] = useState<TableStageFilter>("ALL");
@@ -233,7 +241,7 @@ export function CodingDashboardPage() {
     return (dashboard.data ?? []).filter((card) => {
       const metadata = coderMetadata.get(card.userId);
       const currentStage = metadata?.currentStage ?? "Unassigned";
-      const matchesUser = tableUserIds.length === 0 || tableUserIds.includes(card.userId);
+      const matchesUser = tableUserIds === null || tableUserIds.includes(card.userId);
       const matchesLead = tableLeadId === "ALL" || card.leadId === tableLeadId || metadata?.lead?.id === tableLeadId || card.userId === tableLeadId;
       const matchesCohort = tableCohortId === "ALL" || metadata?.cohort?.id === tableCohortId;
       const matchesStage = tableStage === "ALL" || currentStage === tableStage;
@@ -243,26 +251,23 @@ export function CodingDashboardPage() {
       `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`),
     );
   }, [coderMetadata, dashboard.data, tableCohortId, tableLeadId, tableStage, tableUserIds]);
+  const tableMetricTotals = metricTotals(filteredCoderCards.map(card => card.efficiency));
   const sortedCoderCards = sortTableRows(filteredCoderCards, efficiencyColumns, tableSort);
+  const totalCoderPages = Math.max(1, Math.ceil(sortedCoderCards.length / CODER_PAGE_SIZE));
+  const currentCoderPage = Math.min(tablePage, totalCoderPages);
+  const visibleCoderCards = sortedCoderCards.slice((currentCoderPage - 1) * CODER_PAGE_SIZE, currentCoderPage * CODER_PAGE_SIZE);
   const tableFilterCount =
-    Number(tableUserIds.length > 0) +
+    Number(tableUserIds !== null) +
     Number(tableLeadId !== "ALL") +
     Number(tableCohortId !== "ALL") +
     Number(tableStage !== "ALL");
 
   const clearTableFilters = () => {
-    setTableUserIds([]);
+    setTablePage(1);
+    setTableUserIds(null);
     setTableLeadId("ALL");
     setTableCohortId("ALL");
     setTableStage("ALL");
-  };
-
-  const toggleTableUser = (userId: number) => {
-    setTableUserIds((selected) =>
-      selected.includes(userId)
-        ? selected.filter((id) => id !== userId)
-        : [...selected, userId],
-    );
   };
 
   const totals = useMemo(
@@ -351,6 +356,7 @@ export function CodingDashboardPage() {
   };
 
   const applyFilters = () => {
+    setTablePage(1);
     setDateMode(draftFilters.dateMode);
     setDay(draftFilters.day);
     setMonth(draftFilters.month);
@@ -379,12 +385,12 @@ export function CodingDashboardPage() {
   };
 
   return (
-    <div className="mx-auto flex max-w-screen-2xl flex-col gap-6">
+    <div className="mx-auto flex max-w-screen-2xl flex-col gap-4">
       <section className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-brand-600">Coding operations</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-content-primary">Dashboard</h1>
-          <p className="mt-1 text-sm text-content-muted">Kairon and manual production overview for {periodLabel}.</p>
+          <p className="mt-1 text-sm text-content-muted">Kairon and Manual production overview for {periodLabel}.</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 xl:max-w-2xl xl:justify-end">
@@ -508,27 +514,30 @@ export function CodingDashboardPage() {
       ) : dashboard.error ? (
         <ErrorState message={getErrorMessage(dashboard.error)} onRetry={dashboard.refetch} />
       ) : (
-        <div className="grid gap-5 lg:grid-cols-5">
-          <article className="flex flex-col rounded-xl border border-border bg-surface p-6 shadow-card lg:col-span-2">
+        <div className="flex flex-col gap-3">
+          <article className="rounded-xl border border-border bg-surface p-4 shadow-card">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 text-content-secondary">
                   <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand-700"><MetricIcon kind="charts" /></span>
                   <h2 className="text-sm font-semibold">Chart production</h2>
                 </div>
-                <p className="mt-3 text-xs text-content-muted">Total charts in the selected period</p>
+                <p className="mt-1 text-xs text-content-muted">Total charts in the selected period</p>
               </div>
               <span className="rounded-full bg-surface-inset px-3 py-1 text-xs font-medium text-content-secondary">{dashboard.data?.length ?? 0} people</span>
             </div>
 
-            <div className="mt-5 grid flex-1 content-center gap-3 sm:grid-cols-2">
-              <ProductionMetric label="Completed Kairon" value={totals.kairon} />
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <ProductionMetric label="Kairon charts" value={totals.kairon} />
               <ProductionMetric label="Manual charts" value={totals.manual} />
-              <ProductionMetric label="Kairon − Manual" value={chartDifference} wide />
+              <ProductionMetric label="Kairon − Manual" value={chartDifference} />
             </div>
           </article>
 
-          <article className="flex flex-col rounded-xl border border-border bg-surface p-6 shadow-card">
+          <details className="rounded-xl border border-border bg-surface">
+            <summary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium text-content-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">Summary details · Hours, efficiency and CPD</summary>
+            <div className="grid gap-3 border-t border-border p-3 md:grid-cols-3">
+          <article className="flex flex-col rounded-xl border border-border bg-surface p-4 shadow-card">
             <div className="flex items-center gap-2 text-content-secondary">
               <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-warning-bg text-warning"><MetricIcon kind="downtime" /></span>
               <h2 className="text-sm font-semibold">Productive hours</h2>
@@ -542,38 +551,40 @@ export function CodingDashboardPage() {
             />
           </article>
 
-          <article className="flex flex-col rounded-xl border border-border bg-surface p-6 shadow-card">
+          <article className="flex flex-col rounded-xl border border-border bg-surface p-4 shadow-card">
             <div className="flex items-center gap-2 text-content-secondary">
               <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-success-bg text-success"><MetricIcon kind="charts" /></span>
               <h2 className="text-sm font-semibold">Team efficiency</h2>
             </div>
-            <div className="flex flex-1 flex-col justify-center gap-4 py-6">
-              <EfficiencyMetric label="Manual" value={teamManualEfficiency} />
+            <div className="flex flex-1 flex-col justify-center gap-3 py-3">
               <EfficiencyMetric label="Kairon" value={teamKaironEfficiency} />
+              <EfficiencyMetric label="Manual" value={teamManualEfficiency} />
               <p className="text-xs text-content-muted">Weighted for the selected period</p>
             </div>
             <div className="grid grid-cols-2 gap-3 border-t border-border pt-4">
-              <SmallMetric label="Adjusted target" value={totals.adjustedTarget.toFixed(1)} />
+              <SmallMetric label="Adjusted target" value={totals.adjustedTarget.toFixed(0)} />
               <SmallMetric label="Calculated days" value={formatNumber(totals.calculatedDays)} />
             </div>
           </article>
 
-          <article className="flex flex-col rounded-xl border border-border bg-surface p-6 shadow-card">
+          <article className="flex flex-col rounded-xl border border-border bg-surface p-4 shadow-card">
             <div className="flex items-center gap-2 text-content-secondary">
               <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand-700"><MetricIcon kind="charts" /></span>
               <h2 className="text-sm font-semibold">Team CPD</h2>
             </div>
-            <div className="flex flex-1 flex-col justify-center gap-4 py-6">
-              <EfficiencyMetric label="Manual CPD" value={teamManualCpd} suffix="" />
+            <div className="flex flex-1 flex-col justify-center gap-3 py-3">
               <EfficiencyMetric label="Kairon CPD" value={teamKaironCpd} suffix="" />
+              <EfficiencyMetric label="Manual CPD" value={teamManualCpd} suffix="" />
               <EfficiencyMetric label="Target CPD" value={teamTargetCpd} suffix="" />
               <p className="text-xs text-content-muted">Charts normalized to the Daily Refresh 8-hour basis</p>
             </div>
             <div className="grid grid-cols-2 gap-3 border-t border-border pt-4">
-              <SmallMetric label="Productive hours" value={(totals.productiveMinutes / 60).toFixed(1)} />
+              <SmallMetric label="Productive hours" value={(totals.productiveMinutes / 60).toFixed(0)} />
               <SmallMetric label="Calculated days" value={formatNumber(totals.calculatedDays)} />
             </div>
           </article>
+            </div>
+          </details>
         </div>
       )}
 
@@ -588,7 +599,7 @@ export function CodingDashboardPage() {
                     {filteredCoderCards.length} {filteredCoderCards.length === 1 ? "coder" : "coders"}
                   </span>
                 </div>
-                <p className="mt-1 text-sm text-content-muted">Search and filters below apply to both graph and list views.</p>
+                <p className="mt-1 text-sm text-content-muted">Compare Kairon and Manual across the filtered team.</p>
               </div>
               <div className="flex items-center gap-2">
                 {tableFilterCount > 0 && (
@@ -621,51 +632,16 @@ export function CodingDashboardPage() {
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Filter label="User">
-                <details className="group relative">
-                  <summary className={`${inputClassName} flex w-full cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden`}>
-                    <span className="truncate">
-                      {tableUserIds.length === 0
-                        ? "All users"
-                        : `${tableUserIds.length} ${tableUserIds.length === 1 ? "user" : "users"} selected`}
-                    </span>
-                    <span className="text-content-muted transition group-open:rotate-180" aria-hidden="true">⌄</span>
-                  </summary>
-                  <div className="absolute z-30 mt-1 max-h-72 w-full min-w-72 overflow-y-auto rounded-lg border border-border bg-surface p-2 shadow-popover">
-                    <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-surface-muted">
-                      <input
-                        type="checkbox"
-                        checked={tableUserIds.length === 0}
-                        onChange={() => setTableUserIds([])}
-                        className="h-4 w-4 accent-brand-600"
-                      />
-                      <span className="font-medium text-content-primary">All users</span>
-                    </label>
-                    <div className="my-1 border-t border-border" />
-                    {coderOptions.map((candidate) => (
-                      <label key={candidate.userId} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-sm hover:bg-surface-muted">
-                        <input
-                          type="checkbox"
-                          checked={tableUserIds.includes(candidate.userId)}
-                          onChange={() => toggleTableUser(candidate.userId)}
-                          className="mt-0.5 h-4 w-4 shrink-0 accent-brand-600"
-                        />
-                        <span className="min-w-0">
-                          <span className="flex flex-wrap items-center gap-1.5 font-medium text-content-primary">
-                            {candidate.firstName} {candidate.lastName}
-                            {!isCardActive(candidate) && <Badge tone="neutral">Inactive</Badge>}
-                          </span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </details>
-              </Filter>
+            <div className="mt-3"><SearchableMultiSelect label="Users" noun="users" value={(tableUserIds ?? coderOptions.map(candidate => candidate.userId)).map(String)}
+              options={coderOptions.map(candidate => ({value:String(candidate.userId),label:`${candidate.firstName} ${candidate.lastName}`}))}
+              onChange={ids => {setTableUserIds(ids.map(Number));setTablePage(1);}} /></div>
+            <details className="mt-3 rounded-lg border border-border bg-surface-muted/50">
+              <summary className="cursor-pointer rounded-lg px-3 py-2.5 text-sm font-medium text-content-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">Filter coders{tableFilterCount > 0 ? ` (${tableFilterCount} active)` : ""}</summary>
+            <div className="grid gap-3 border-t border-border p-3 sm:grid-cols-2 xl:grid-cols-4">
               <Filter label="Lead">
                 <select
                   value={tableLeadId}
-                  onChange={(event) => setTableLeadId(event.target.value === "ALL" ? "ALL" : Number(event.target.value))}
+                  onChange={(event) => { setTableLeadId(event.target.value === "ALL" ? "ALL" : Number(event.target.value)); setTablePage(1); }}
                   className={`${inputClassName} w-full`}
                 >
                   <option value="ALL">All leads</option>
@@ -675,7 +651,7 @@ export function CodingDashboardPage() {
               <Filter label="Cohort">
                 <select
                   value={tableCohortId}
-                  onChange={(event) => setTableCohortId(event.target.value === "ALL" ? "ALL" : Number(event.target.value))}
+                  onChange={(event) => { setTableCohortId(event.target.value === "ALL" ? "ALL" : Number(event.target.value)); setTablePage(1); }}
                   className={`${inputClassName} w-full`}
                   disabled={cohorts.isLoading || Boolean(cohorts.error)}
                 >
@@ -686,7 +662,7 @@ export function CodingDashboardPage() {
               <Filter label="Current stage">
                 <select
                   value={tableStage}
-                  onChange={(event) => setTableStage(event.target.value as TableStageFilter)}
+                  onChange={(event) => { setTableStage(event.target.value as TableStageFilter); setTablePage(1); }}
                   className={`${inputClassName} w-full`}
                 >
                   <option value="ALL">All stages</option>
@@ -694,19 +670,21 @@ export function CodingDashboardPage() {
                 </select>
               </Filter>
             </div>
+            </details>
           </div>
           {coderEfficiencyView === "graph" ? (
             <TeamPerformanceGraphs cards={filteredCoderCards} />
           ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-surface-muted text-xs uppercase tracking-wide text-content-muted">
                 <tr>
-                  {efficiencyColumns.map((column) => <SortableHeader key={column.key} column={column} sort={tableSort} onSort={setTableSort} className="px-4 py-3 font-medium" />)}
+                  {efficiencyColumns.map((column) => <SortableHeader key={column.key} column={column} sort={tableSort} onSort={(nextSort) => { setTableSort(nextSort); setTablePage(1); }} className="px-4 py-3 font-medium" />)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {sortedCoderCards.map((card) => {
+                {visibleCoderCards.map((card) => {
                   const manualPercent = card.efficiency.manualEfficiencyPercent === null ? null : Number(card.efficiency.manualEfficiencyPercent);
                   const kaironPercent = card.efficiency.kaironEfficiencyPercent === null ? null : Number(card.efficiency.kaironEfficiencyPercent);
                   const metadata = coderMetadata.get(card.userId);
@@ -726,20 +704,20 @@ export function CodingDashboardPage() {
                           <StageBadge stage={metadata?.currentStage ?? null} />
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-content-secondary">{card.efficiency.manualCharts}</td>
-                      <td className="px-4 py-3 text-content-secondary">{card.efficiency.kaironCharts}</td>
-                      <td className="px-4 py-3 text-content-secondary">{Number(card.efficiency.adjustedTarget).toFixed(1)}</td>
-                      <td className="px-4 py-3 text-content-secondary">{(card.efficiency.productiveMinutes / 60).toFixed(1)}</td>
+                      <td data-metric="kairon" className="metric-value px-4 py-3 text-content-secondary">{card.efficiency.kaironCharts}</td>
+                      <td data-metric="manual" className="metric-value px-4 py-3 text-content-secondary">{card.efficiency.manualCharts}</td>
+                      <td data-metric="adjusted" className="metric-value px-4 py-3 text-content-secondary">{Number(card.efficiency.adjustedTarget).toFixed(0)}</td>
+                      <td className="px-4 py-3 text-content-secondary">{(card.efficiency.productiveMinutes / 60).toFixed(0)}</td>
                       <td className="px-4 py-3 text-content-secondary">{card.efficiency.calculatedDays}</td>
-                      <td className={`px-4 py-3 font-semibold ${manualPercent !== null && manualPercent >= 100 ? "text-success" : "text-content-primary"}`}>
-                        {manualPercent === null ? "—" : `${Math.round(manualPercent)}%`}
-                      </td>
                       <td className={`px-4 py-3 font-semibold ${kaironPercent !== null && kaironPercent >= 100 ? "text-success" : "text-content-primary"}`}>
                         {kaironPercent === null ? "—" : `${Math.round(kaironPercent)}%`}
                       </td>
-                      <td className="px-4 py-3 font-semibold text-content-primary">{card.efficiency.manualCpd === null ? "—" : Math.round(Number(card.efficiency.manualCpd))}</td>
-                      <td className="px-4 py-3 font-semibold text-content-primary">{card.efficiency.kaironCpd === null ? "—" : Math.round(Number(card.efficiency.kaironCpd))}</td>
-                      <td className="px-4 py-3 font-semibold text-content-primary">{card.efficiency.targetCpd === null ? "—" : Math.round(Number(card.efficiency.targetCpd))}</td>
+                      <td className={`px-4 py-3 font-semibold ${manualPercent !== null && manualPercent >= 100 ? "text-success" : "text-content-primary"}`}>
+                        {manualPercent === null ? "—" : `${Math.round(manualPercent)}%`}
+                      </td>
+                      <td data-metric="kairon" className="metric-value px-4 py-3 font-semibold text-content-primary">{card.efficiency.kaironCpd === null ? "—" : displayCpd(card.efficiency.kaironCpd)}</td>
+                      <td data-metric="manual" className="metric-value px-4 py-3 font-semibold text-content-primary">{card.efficiency.manualCpd === null ? "—" : displayCpd(card.efficiency.manualCpd)}</td>
+                      <td data-metric="target" className="metric-value px-4 py-3 font-semibold text-content-primary">{card.efficiency.targetCpd === null ? "—" : displayCpd(card.efficiency.targetCpd)}</td>
                     </tr>
                   );
                 })}
@@ -753,8 +731,18 @@ export function CodingDashboardPage() {
                   </tr>
                 )}
               </tbody>
+              <tfoot className="border-t-2 border-border bg-surface-muted font-semibold"><tr><th scope="row" className="px-4 py-3">Total · all matching coders</th>
+                <td className="px-4 py-3">{displayNumber(tableMetricTotals.kaironCharts)}</td><td className="px-4 py-3">{displayNumber(tableMetricTotals.manualCharts)}</td>
+                <td className="px-4 py-3">{displayNumber(filteredCoderCards.reduce((sum,card) => sum + Number(card.efficiency.adjustedTarget),0))}</td>
+                <td className="px-4 py-3">{displayNumber(filteredCoderCards.reduce((sum,card) => sum + card.efficiency.productiveMinutes,0)/60)}</td>
+                <td className="px-4 py-3">{displayNumber(filteredCoderCards.reduce((sum,card) => sum + card.efficiency.calculatedDays,0))}</td>
+                {(["kaironEfficiencyPercent","manualEfficiencyPercent"] as const).map(key => <td key={key} className="px-4 py-3">{displayNumber(tableMetricTotals[key])}{tableMetricTotals[key] != null ? "%" : ""}</td>)}
+                {(["kaironCpd","manualCpd","targetCpd"] as const).map(key => <td key={key} className="px-4 py-3">{displayCpd(tableMetricTotals[key])}</td>)}
+              </tr></tfoot>
             </table>
           </div>
+          <PaginationControls page={currentCoderPage} pageSize={CODER_PAGE_SIZE} total={sortedCoderCards.length} totalPages={totalCoderPages} onPageChange={setTablePage} />
+          </>
           )}
         </section>
       )}
@@ -780,7 +768,7 @@ function StageBadge({ stage }: { stage: string | null }) {
 
 function ProductionMetric({ label, value, wide = false }: { label: string; value: number; wide?: boolean }) {
   return (
-    <div className={`rounded-lg border border-border bg-surface-muted px-4 py-3 ${wide ? "sm:col-span-2 sm:flex sm:items-center sm:justify-between sm:gap-4" : ""}`}>
+    <div data-metric={metricIdentity(label)} className={`metric-block rounded-lg border border-border bg-surface-muted px-4 py-3 ${wide ? "sm:col-span-2 sm:flex sm:items-center sm:justify-between sm:gap-4" : ""}`}>
       <p className="text-xs font-medium text-content-muted">{label}</p>
       <p className={`${wide ? "mt-1 sm:mt-0" : "mt-2"} text-3xl font-semibold tracking-tight text-content-primary`}>
         {formatNumber(value)}
@@ -790,15 +778,15 @@ function ProductionMetric({ label, value, wide = false }: { label: string; value
 }
 
 function SmallMetric({ label, value }: { label: string; value: string }) {
-  return <div><p className="text-xs text-content-muted">{label}</p><p className="mt-1 text-sm font-semibold text-content-primary">{value}</p></div>;
+  return <div data-metric={metricIdentity(label)} className="metric-block"><p className="text-xs text-content-muted">{label}</p><p className="mt-1 text-sm font-semibold text-content-primary">{value}</p></div>;
 }
 
 function EfficiencyMetric({ label, value, suffix = "%" }: { label: string; value: number | null; suffix?: string }) {
   return (
-    <div className="flex items-end justify-between gap-3">
+    <div data-metric={metricIdentity(label)} className="metric-block flex items-end justify-between gap-3">
       <span className="text-sm text-content-muted">{label}</span>
       <span className={`text-2xl font-semibold tracking-tight ${value !== null && value >= 100 ? "text-success" : "text-content-primary"}`}>
-        {value === null ? "—" : `${value.toFixed(1)}${suffix}`}
+        {value === null ? "—" : `${label.includes("CPD") ? displayCpd(value) : displayNumber(value)}${suffix}`}
       </span>
     </div>
   );
@@ -823,7 +811,7 @@ function WorkingHoursDonut({
 
   return (
     <div className="flex flex-1 flex-col justify-center gap-4 py-4">
-      <div className="relative mx-auto h-36 w-36" aria-label={`Average productive time ${productive.toFixed(1)} hours of an eight-hour workday`}>
+      <div className="relative mx-auto h-36 w-36" aria-label={`Average productive time ${productive.toFixed(0)} hours of an eight-hour workday`}>
         <svg viewBox="0 0 160 160" className="h-full w-full -rotate-90" aria-hidden="true">
           <circle cx="80" cy="80" r={radius} fill="none" stroke="var(--color-surface-inset)" strokeWidth="12" />
           <circle
@@ -839,7 +827,7 @@ function WorkingHoursDonut({
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-3xl font-semibold text-content-primary">{productive.toFixed(1)}h</span>
+          <span className="text-3xl font-semibold text-content-primary">{productive.toFixed(0)}h</span>
         </div>
       </div>
       <div className="grid gap-2 border-t border-border pt-4 text-xs">
@@ -857,7 +845,7 @@ function HourStat({ colorClass, label, value }: { colorClass: string; label: str
     <div className="flex items-center gap-2 rounded-md bg-surface-muted px-3 py-2">
       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${colorClass}`} />
       <span className="text-content-secondary">{label}</span>
-      <span className="ml-auto font-semibold text-content-primary">{value.toFixed(1)}h</span>
+      <span className="ml-auto font-semibold text-content-primary">{value.toFixed(0)}h</span>
     </div>
   );
 }

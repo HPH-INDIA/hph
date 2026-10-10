@@ -54,3 +54,156 @@ table tbody tr:hover {
   color: var(--color-hph-blue);
   background: var(--color-brand-200);
 }
+
+/* Connected redesign: compact shell, source comparisons, and full task pages. */
+.live-redesign { --color-surface-muted:#f5f6fa; --color-border:#e1e2ea; --color-content-muted:#646879; --shadow-card:0 1px 2px rgb(32 20 87 / .025); --radius-xl:.75rem; }
+.app-frame { height:100dvh; display:flex; background:#f5f6fa; overflow:hidden; }
+.app-navigation { width:208px; flex-shrink:0; display:flex; flex-direction:column; padding:26px 16px 12px; background:#201457; color:white; }
+.app-brand { display:flex; align-items:center; gap:10px; padding:0 8px 28px; }
+.app-brand strong { font-size:20px; letter-spacing:1px; }
+.app-brand small { display:block; font-size:9px; letter-spacing:1.2px; color:#c0b8df; margin-top:3px; }
+.nav-section-label { font-size:9px; letter-spacing:1.5px; text-transform:uppercase; color:#b9b0d8; padding:0 12px; margin:8px 0 10px; }
+.app-nav-links { display:flex; flex-direction:column; gap:4px; min-height:0; overflow-y:auto; }
+.app-nav-link { display:flex; gap:10px; align-items:center; min-height:44px; padding:10px 12px; font-size:12px; color:#d5cee9; border-radius:7px; }
+.app-nav-link:hover { color:#fff; background:#ffffff12; }
+.app-nav-link.is-active { background:#ffffff18; box-shadow:inset 3px 0 #dfb9ff; color:#fff; }
+.app-nav-link svg { width:18px; height:18px; }
+.app-nav-link.mobile-account { display:none; }
+.app-nav-bottom { margin-top:auto; padding-top:20px; }
+.environment-note { display:flex; flex-direction:column; gap:5px; color:#c6bcdf; border:1px solid #ffffff14; border-radius:9px; background:#ffffff08; font-size:10px; padding:14px; margin:0 0 14px; line-height:1.6; }
+.environment-note strong { color:white; }
+.app-profile { display:flex; gap:9px; align-items:center; padding:10px 8px; border-top:1px solid #ffffff18; }
+.app-profile strong { display:block; font-size:11px; font-weight:550; }
+.app-profile small { display:block; font-size:10px; color:#c0b8df; margin-top:3px; }
+.app-avatar { width:32px; height:32px; flex-shrink:0; display:grid; place-items:center; border-radius:50%; background:#ffffff1b; color:white; font-size:11px; font-weight:600; }
+.app-workspace { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
+.app-topbar { height:52px; flex-shrink:0; background:white; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:0 28px; border-bottom:1px solid #e1e2ea; color:#646879; font-size:11px; }
+.app-topbar strong { color:#171a2b; font-weight:550; margin-left:8px; }.app-topbar>span>span{margin-left:8px;}
+.environment-badge { color:#795516; background:#fff6e7; border:1px solid #efdfbf; font-size:9px; letter-spacing:.3px; border-radius:4px; padding:4px 7px; white-space:nowrap; }
+.app-main { flex:1; min-height:0; min-width:0; overflow-y:auto; overflow-x:hidden; padding:22px 28px; overscroll-behavior:contain; }
+.app-main h1 { font-size:25px; line-height:1.25; letter-spacing:-.55px; }
+.app-main table { font-size:12px; }.app-main thead th{font-size:11px}.app-main tbody th{font-size:inherit}.app-main td,.app-main th{padding-top:10px;padding-bottom:10px}
+.app-main .compact-data-table td,.app-main .compact-data-table th{padding-top:6px;padding-bottom:6px}
+.app-main .shadow-card { box-shadow:0 1px 2px #20145706; }.app-main .rounded-xl{border-radius:12px}
+.live-redesign button:focus-visible,.live-redesign a:focus-visible{outline:3px solid #b080d4;outline-offset:2px}
+.live-redesign .app-workspace>footer{font-size:10px;padding-top:5px;padding-bottom:5px;background:white}
+.skip-content { position:fixed; top:-100px; left:12px; background:white; padding:12px; z-index:200; }.skip-content:focus{top:12px}
+@media(max-width:1000px){.app-navigation{width:176px;padding-inline:10px}.app-main{padding:20px}.app-topbar{padding-inline:20px}}
+@media(max-width:767px){.app-frame{flex-direction:column}.app-navigation{width:100%;padding:12px 12px 7px;flex-direction:column}.app-brand{padding:0 5px 10px}.app-brand strong{font-size:15px}.app-brand small,.nav-section-label,.app-nav-bottom{display:none}.app-brand>span:first-child{max-width:30px}.app-nav-links{flex-direction:row;overflow-x:auto}.app-nav-link{white-space:nowrap;font-size:11px;padding:9px 12px;min-height:44px}.app-nav-link.is-active{box-shadow:inset 0 -2px #dfb9ff}.app-topbar{height:40px;padding-inline:16px;font-size:10px}.environment-badge{font-size:8px}.app-main{padding:18px 16px}.app-main h1{font-size:22px}.app-main table{font-size:11px}}
+@media(prefers-reduced-motion:reduce){.live-redesign *{animation:none!important;transition:none!important}}
+@media(max-width:767px){.app-nav-link.mobile-account{display:flex;flex-shrink:0}}
+
+/* Metric identity is independent of efficiency/status badge severity. */
+[data-metric="kairon"] { --metric-color:var(--color-metric-kairon); --metric-bg:color-mix(in srgb, var(--metric-color) 7%, white); }
+[data-metric="manual"] { --metric-color:var(--color-metric-manual); --metric-bg:color-mix(in srgb, var(--metric-color) 7%, white); }
+[data-metric="adjusted"] { --metric-color:var(--color-metric-adjusted); --metric-bg:color-mix(in srgb, var(--metric-color) 7%, white); }
+[data-metric="target"] { --metric-color:var(--color-metric-target); --metric-bg:color-mix(in srgb, var(--metric-color) 7%, white); }
+.metric-label[data-metric],.metric-value[data-metric],.metric-block[data-metric]>dt,.metric-block[data-metric]>dd,.metric-block[data-metric]>p,.metric-block[data-metric]>span { color:var(--metric-color); }
+.metric-label[data-metric]::before,.metric-block[data-metric]>dt::before { content:""; display:inline-block; width:7px; height:7px; border-radius:2px; margin-right:6px; background:var(--metric-color); vertical-align:middle; }
+.app-main thead th[data-metric] { color:var(--metric-color); background:var(--color-surface-muted); box-shadow:inset 0 2px var(--metric-color); }
+.app-main thead th[data-metric] button,.app-main thead th[data-metric] button span { color:inherit; }
+.metric-tab[data-metric] { color:var(--metric-color); }
+.metric-tab[data-metric][aria-pressed="true"] { background:var(--metric-bg); border-color:var(--metric-color); }
+
+/* Desktop comparison uses the workspace height, with two equal plot areas. */
+@media (min-width:1024px) and (min-height:600px) {
+  .reports-fit { height:100%; min-height:0; gap:8px; }
+  .reports-fit > div:first-child { display:none; }
+  .reports-fit > p:last-child { display:none; }
+  .reports-fit .report-body, .reports-fit .report-overview { flex:1; min-height:0; display:flex; flex-direction:column; gap:8px; }
+  .reports-fit .report-overview > div:first-child { display:none; }
+  .reports-fit .report-overview > .grid { flex-shrink:0; }
+  .reports-fit .report-overview > .grid > article { padding:7px 12px; }
+  .reports-fit .report-overview > .grid > article > div { margin-top:2px; }
+  .reports-fit .report-overview > .grid > article p { font-size:12px; }
+  .reports-fit .report-overview > .grid > article > div > p { font-size:20px; }
+  .reports-fit .comparison-fit { flex:1; min-height:0; display:flex; flex-direction:column; gap:5px; position:relative; }
+  .reports-fit .comparison-fit > * { margin-top:0!important; }
+  .reports-fit .comparison-fit > p:first-child { display:none; }
+  .reports-fit .comparison-fit > div:first-of-type { min-height:40px; flex-shrink:0; }
+  .reports-fit .comparison-fit [aria-label="Graph interval"] button { min-height:28px; padding:3px 10px; }
+  .reports-fit .overview-view-controls { margin-left:auto; }
+  .reports-fit .comparison-records { flex:1; min-height:0; display:flex; flex-direction:column; }
+  .reports-fit .comparison-records > div { flex-shrink:0; }
+  .reports-fit .comparison-records > [role="region"] { flex:1; min-height:0; overflow:auto; }
+  .reports-fit .comparison-records thead { position:sticky; top:0; z-index:1; }
+  .reports-fit .report-source-body { overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+  .reports-fit .report-source-body > div { gap:12px; }
+  .reports-fit .report-source-body section { gap:12px; }
+  .reports-fit .report-source-body h2, .reports-fit .report-source-body h3 { font-size:14px; }
+  .reports-fit .report-source-body article { padding:10px 12px; }
+  .reports-fit .report-source-body table thead { position:sticky; top:0; z-index:1; }
+  .reports-fit .linked-fit { flex:1; min-height:0; display:flex; flex-direction:column; gap:4px; }
+  .reports-fit .linked-fit > p { font-size:10px; }
+  .reports-fit .chart-stack { flex:1; min-height:0; display:grid; grid-template-rows:minmax(0,1fr) minmax(0,1fr); gap:8px; margin-top:0!important; }
+  .reports-fit .chart-card { min-height:0; display:flex; flex-direction:column; margin-top:0!important; }
+  .reports-fit .chart-card > div:first-child { flex-shrink:0; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:4px 12px; padding:6px 12px; }
+  .reports-fit .chart-card h3 { font-size:12px; }
+  .reports-fit .chart-card > div:first-child > p { display:none; }
+  .reports-fit .chart-card > div:first-child > div { margin-top:0; font-size:10px; }
+  .reports-fit .chart-plot { flex:1; min-height:0; padding-bottom:0; overflow-y:hidden; }
+  .reports-fit [data-chart-details] { flex-shrink:0; padding:5px 12px; font-size:10px; }
+}
+
+@media (min-width:1024px) and (min-height:600px) {
+  .reports-fit .source-tab, .reports-fit .source-report, .reports-fit .source-record-panel { display:flex; flex-direction:column; flex:1; min-height:0; gap:12px; }
+  .reports-fit .source-tab > *, .reports-fit .source-report > *, .reports-fit .source-record-panel > * { flex-shrink:0; }
+  .reports-fit .source-table-scroll { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; }
+  .reports-fit .source-record-panel > p:last-child { font-size:11px; }
+}
+
+/* Theme configuration lives beside the account controls, leaving the workspace full-height. */
+.sidebar-theme { margin-bottom:8px; }
+.sidebar-theme > button { border:1px solid #ffffff26; }
+@media(max-width:767px) {
+  .app-nav-bottom:has(.sidebar-theme) { display:block; padding-top:8px; }
+  .app-nav-bottom > :not(.sidebar-theme) { display:none; }
+  .sidebar-theme { margin:0; }
+  .sidebar-theme > button { width:auto; min-height:40px; }
+}
+
+/* Tables identify metric sources in column headers; repeated values stay neutral. */
+.app-main table tbody .metric-value[data-metric],
+.app-main table tfoot .metric-value[data-metric] { color:var(--color-content-primary); }
+
+/* Lead desktop layout keeps the toolbar and summaries visible above long results. */
+@media (min-width:1024px) and (min-height:700px) {
+  .lead-dashboard-fit { height:100%; min-height:0; }
+  .lead-dashboard-fit > :not(.lead-dashboard-results) { flex-shrink:0; }
+  .lead-dashboard-results { flex:1; min-height:0; overflow:auto; }
+}
+
+@media (min-width:1024px) and (min-height:700px) {
+  .coder-dashboard-fit { height:100%; min-height:0; }
+  .coder-dashboard-fit > :not(.coder-dashboard-results) { flex-shrink:0; }
+  .coder-dashboard-results { flex:1; min-height:0; overflow:auto; }
+}
+
+.coder-summary-rates > section { height:100%; }
+.coder-summary-rates article { height:100%; }
+
+.coder-summary-rates dd { font-size:1.5rem; font-weight:600; font-variant-numeric:tabular-nums; }
+
+/* Compact Kairon manager workspace: controls stay above a scrolling record list. */
+.kairon-manager-fit .kairon-team-toolbar { position:sticky; top:0; z-index:2; background:var(--color-surface); padding:8px 0; }
+@media (min-width:1024px) and (min-height:600px) {
+  .reports-fit .kairon-manager-fit { gap:8px; }
+  .reports-fit .kairon-manager-fit .source-record-panel { padding:0 12px 12px; gap:0; }
+  .reports-fit .kairon-manager-fit .source-table-scroll { display:flex; flex-direction:column; overflow:hidden; }
+  .kairon-manager-fit .source-table-scroll > .kairon-team-toolbar { flex-shrink:0; }
+  .kairon-manager-fit .source-table-scroll > div:last-child { flex:1; min-height:0; overflow:auto; }
+  .kairon-manager-fit .source-table-scroll th, .kairon-manager-fit .source-table-scroll td { padding-top:9px; padding-bottom:9px; }
+}
+
+.chart-export-workspace { display:flex; flex-direction:column; gap:10px; min-height:0; height:100%; }
+.chart-export-preview { display:flex; align-items:center; justify-content:center; min-height:0; flex:1; }
+.chart-export-preview img { display:block; width:100%; height:100%; object-fit:contain; min-height:0; }
+@media(min-width:768px) and (min-height:600px) {
+  .action-screen-fit { height:100%; min-height:0; gap:12px; }
+  .action-screen-fit > header { flex-direction:row; align-items:center; justify-content:space-between; gap:12px; padding-bottom:10px; flex-shrink:0; }
+  .action-screen-fit > header h1 { font-size:20px; }
+  .action-screen-fit > div { flex:1; min-height:0; }
+}
+@media(max-width:767px), (max-height:599px) {
+  .chart-export-preview img { height:auto; }
+}

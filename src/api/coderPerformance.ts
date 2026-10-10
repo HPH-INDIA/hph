@@ -3,7 +3,7 @@ import type { ApiRequestArgs } from "./baseQuery";
 import { buildQueryString } from "./queryString";
 import type { DailyEfficiency, EfficiencySummary, LeadDashboardSummary, ManagerDashboardQuery, ManagerPerformanceMember } from "./types";
 
-export type CoderMetrics = Pick<EfficiencySummary, "manualCharts" | "kaironCharts" | "adjustedCpd" | "manualCpd" | "kaironCpd" | "targetCpd" | "manualEfficiencyPercent" | "kaironEfficiencyPercent">;
+export type CoderMetrics = Pick<EfficiencySummary, "manualCharts" | "kaironCharts" | "adjustedCpd" | "manualCpd" | "kaironCpd" | "targetCpd" | "manualEfficiencyPercent" | "kaironEfficiencyPercent"> & { adjustedDailyAverage?: number | null };
 export interface CoderPerformanceMember {
   userId: number;
   name: string;
@@ -48,7 +48,10 @@ export async function loadLeadCoderPerformance(args: LeadCoderPerformanceQuery, 
 }
 
 export function leadCoderDay(members: CoderPerformanceMember[], date: string): CoderPerformanceMember[] {
-  return members.map((member) => ({ ...member, efficiency: member.daily?.find((day) => day.date === date) ?? null }));
+  return members.map((member) => {
+    const day = member.daily?.find((day) => day.date === date);
+    return { ...member, efficiency: day ?? null, daily: day ? [day] : [] };
+  });
 }
 
 /** Keep only scope filters when drilling into one day; never carry a month,
@@ -61,6 +64,6 @@ export function managerCoderDay(members: CoderPerformanceMember[], dailyMembers:
   const byId = new Map(dailyMembers.filter((member) => member.roleType === "employee").map((member) => [member.userId, member]));
   return members.map((member) => {
     const day = byId.get(member.userId)?.efficiency;
-    return { ...member, efficiency: day && (day.calculatedDays > 0 || day.loginDays > 0 || day.manualCharts > 0 || day.kaironCharts > 0) ? day : null };
+    return { ...member, daily: undefined, efficiency: day && (day.calculatedDays > 0 || day.loginDays > 0 || day.manualCharts > 0 || day.kaironCharts > 0) ? { ...day, adjustedDailyAverage: day.adjustedCpd == null ? null : Number(day.adjustedCpd) } : null };
   });
 }

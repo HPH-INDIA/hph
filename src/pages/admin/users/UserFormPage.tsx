@@ -29,6 +29,7 @@ interface UserFormValues {
   first_name: string;
   last_name: string;
   emp_id: string;
+  join_date: string;
   role_id: string;
   project_id: string;
   reports_to_id: string;
@@ -97,6 +98,7 @@ export function UserFormPage() {
     first_name: user?.first_name ?? "",
     last_name: user?.last_name ?? "",
     emp_id: canManageUserIdentity ? user?.emp_id ?? "" : "",
+    join_date: user?.join_date ?? "",
     role_id: user ? String(user.role_id) : "",
     project_id: user?.project_id != null ? String(user.project_id) : "",
     reports_to_id: user?.reports_to_id != null ? String(user.reports_to_id) : "",
@@ -131,6 +133,7 @@ export function UserFormPage() {
     const selectedRoleType = roleTypeCodeByRoleId.get(Number(values.role_id));
     const payload: Omit<UserCreatePayload, "email" | "emp_id"> = {
       first_name: values.first_name,
+      join_date: values.join_date || null,
       last_name: values.last_name,
       role_id: Number(values.role_id),
       project_id: rule === "required" && values.project_id ? Number(values.project_id) : null,
@@ -211,6 +214,7 @@ export function UserFormPage() {
           return (
             <Form className="mt-6 flex flex-col gap-4 rounded-lg border border-border bg-surface p-6">
               {canManageUserIdentity && <TextField label="Email" name="email" type="email" />}
+              <TextField label="Joining date" name="join_date" type="date" />
               <TextField label="First name" name="first_name" />
               <TextField label="Last name" name="last_name" />
               {canManageUserIdentity && <TextField label="Employee ID" name="emp_id" />}

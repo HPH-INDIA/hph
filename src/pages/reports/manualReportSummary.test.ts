@@ -153,10 +153,10 @@ test("meeting breakdowns include every meeting and retain legacy untyped hours",
     record(1, { id: 2, meetingEngagementHours: "0.25", meetings: [{ type: "Huddle", hours: "0.25" }] }),
     record(2, { meetingEngagementHours: "0.50", meetingType: null }),
   ];
-  assert.equal(formatManualMeetings(records), "Huddle (0.50h), Training (0.50h), Unspecified (0.50h)");
+  assert.equal(formatManualMeetings(records), "Huddle (1h), Training (1h), Unspecified (1h)");
   assert.equal(formatManualMeetings([record(1, { meetingEngagementHours: "0.75", meetings: [
     { type: "Huddle", hours: "0.25" }, { type: "Huddle", hours: "0.50" },
-  ] })]), "Huddle (0.25h), Huddle (0.50h)");
+  ] })]), "Huddle (0h), Huddle (1h)");
   assert.equal(formatManualMeetings([record(1)]), "—");
 });
 

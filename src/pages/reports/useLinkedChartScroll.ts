@@ -3,7 +3,7 @@ import { chartGeometry } from "./reportChartData";
 
 export function useLinkedChartScroll(timelineKey: string, count: number) {
   const nodes = useRef<Array<HTMLDivElement | null>>([]);
-  const [widths, setWidths] = useState([760, 380, 380]);
+  const [widths, setWidths] = useState([760]);
   const geometry = chartGeometry(widths, count);
   const geometryRef = useRef(geometry);
   const position = useRef({ key: timelineKey, start: geometry.maxStart, atEnd: true });
@@ -13,7 +13,7 @@ export function useLinkedChartScroll(timelineKey: string, count: number) {
   useLayoutEffect(() => {
     const measure = () => {
       const next = nodes.current.map((node) => node?.clientWidth ?? 380);
-      if (next.length === 3 && next.every((width) => width > 0)) {
+      if (next.length > 0 && next.every((width) => width > 0)) {
         setWidths((current) => next.every((width, i) => width === current[i]) ? current : next);
       }
     };
@@ -30,7 +30,7 @@ export function useLinkedChartScroll(timelineKey: string, count: number) {
     position.current.atEnd = bounded >= current.maxStart - 0.01;
     nodes.current.forEach((node, i) => {
       if (!node || node === source) return;
-      node.scrollLeft = bounded * current.charts[i].step;
+      node.scrollLeft = bounded * (current.charts[i] ?? current.charts[0]).step;
       // Remember the browser's rounded/clamped value, not the requested float.
       // Native scroll events from these writes must not feed back into the source.
       written.current.set(node, node.scrollLeft);
@@ -52,7 +52,7 @@ export function useLinkedChartScroll(timelineKey: string, count: number) {
     written.current.delete(node);
     // Every native scroll event counts, including a one-pixel wheel/trackpad move.
     // No debounce, minimum delta, timer, or smooth-scroll animation can lag behind.
-    sync(node.scrollLeft / geometryRef.current.charts[index].step, node);
+    sync(node.scrollLeft / (geometryRef.current.charts[index] ?? geometryRef.current.charts[0]).step, node);
   };
   return { nodes, geometry, start, onScroll };
 }
