@@ -17,7 +17,6 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: proxyTarget
         ? {
-            ...(env.METRIC_THEME_PROXY_TARGET ? { "/api/project-metric-theme": { target: env.METRIC_THEME_PROXY_TARGET, changeOrigin: true } } : {}),
             "/api": { target: proxyTarget, changeOrigin: true, secure: true },
             "/swagger-ui": { target: proxyTarget, changeOrigin: true, secure: true },
           }
