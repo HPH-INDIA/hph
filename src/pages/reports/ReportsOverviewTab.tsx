@@ -3,7 +3,7 @@ import { displayNumber, displayCpd } from "@/utils/displayNumber";
 import { metricIdentity } from "@/components/ui/metricIdentity";
 import { useMemo, useState } from "react";
 import { getErrorMessage } from "@/api/apiError";
-import { useGetCodingDashboardQuery, useGetMyEfficiencyQuery } from "@/api/reportsApi";
+import { useGetCodingDashboardQuery, useGetMyEfficiencyQuery, useGetLeadDashboardQuery, useGetLeadCoderPerformanceQuery } from "@/api/reportsApi";
 import type { CodingDashboardCard, EfficiencySummary } from "@/api/types";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { useAuth } from "@/features/auth/useAuth";
@@ -12,6 +12,8 @@ import { ReportGraphs } from "./ReportGraphs";
 import { buildReportChartRows } from "./reportChartData";
 import { PaginationControls } from "@/components/ui/PaginationControls";
 import type { DailyEfficiency } from "@/api/types";
+import { SearchableMultiSelect } from "@/components/ui/SearchableMultiSelect";
+import { PerformanceTabs } from "@/pages/performance/PerformanceTabs";
 
 function formatCpd(value: string | null) {
   return displayCpd(value);
@@ -64,32 +66,62 @@ export function TeamPerformanceGraphs({ cards }: { cards: CodingDashboardCard[] 
 
 export function ReportsOverviewTab({ window, view = "trends", onViewChange }: { window: ManualReportWindow; view?: "records" | "trends"; onViewChange: (view: "records" | "trends") => void }) {
   const { user } = useAuth();
+  const isLead = user?.role.roleType === "lead";
   const isTeamView = ["super_admin", "admin", "manager"].includes(user?.role.roleType ?? "");
+  const [scope, setScope] = useState<"qa" | "coders">("qa");
+  // null means all available coders; an empty selection means no coders.
+  const [selectedCoderIds, setSelectedCoderIds] = useState<string[] | null>(null);
   const { fromDate: from, toDate: to } = window;
-  const efficiency = useGetMyEfficiencyQuery({ from, to }, { skip: isTeamView });
+  const efficiency = useGetMyEfficiencyQuery({ from, to }, { skip: isTeamView || isLead });
   const teamDashboard = useGetCodingDashboardQuery({ from, to, includeDaily: true }, { skip: !isTeamView });
-  const summary = useMemo(() => isTeamView
-    ? teamDashboard.currentData ? aggregateTeamOverview(teamDashboard.currentData, from, to) : undefined
-    : efficiency.currentData, [isTeamView, teamDashboard.currentData, efficiency.currentData, from, to]);
-  const sources = useMemo(() => isTeamView
-    ? (teamDashboard.currentData ?? []).map((card) => card.efficiency.daily)
-    : [efficiency.currentData?.daily ?? []], [isTeamView, teamDashboard.currentData, efficiency.currentData]);
-  const error = isTeamView ? teamDashboard.error : efficiency.error;
-  const refetch = isTeamView ? teamDashboard.refetch : efficiency.refetch;
+  const leadDashboard = useGetLeadDashboardQuery({ from, to }, { skip: !isLead });
+  const coderOptions = useMemo(() => leadDashboard.currentData?.coderOptions ?? [], [leadDashboard.currentData]);
+  const coderDetails = useGetLeadCoderPerformanceQuery({ from, to, coders: coderOptions },
+    { skip: !isLead || scope !== "coders" || !leadDashboard.currentData || !coderOptions.length });
+  const coderIds = selectedCoderIds ?? coderOptions.map(coder => String(coder.userId));
+  const selectedMembers = useMemo(() => (coderDetails.currentData ?? []).filter(member =>
+    selectedCoderIds === null || selectedCoderIds.includes(String(member.userId))), [coderDetails.currentData, selectedCoderIds]);
+  const coderSources = useMemo(() => selectedMembers.map(member => member.daily ?? []), [selectedMembers]);
+  const summary = useMemo(() => isLead
+    ? scope === "qa" ? leadDashboard.currentData?.qa.efficiency
+      : selectedCoderIds === null ? leadDashboard.currentData?.coders.efficiency
+        : metricTotals(coderSources.flat())
+    : isTeamView ? teamDashboard.currentData ? aggregateTeamOverview(teamDashboard.currentData, from, to) : undefined
+      : efficiency.currentData,
+    [isLead, scope, leadDashboard.currentData, selectedCoderIds, coderSources, isTeamView, teamDashboard.currentData, efficiency.currentData, from, to]);
+  const sources = useMemo(() => isLead
+    ? scope === "coders" ? coderSources : [leadDashboard.currentData?.qa.efficiency.daily ?? []]
+    : isTeamView ? (teamDashboard.currentData ?? []).map(card => card.efficiency.daily)
+      : [efficiency.currentData?.daily ?? []],
+    [isLead, scope, coderSources, leadDashboard.currentData, isTeamView, teamDashboard.currentData, efficiency.currentData]);
+  const error = isLead ? leadDashboard.error || (scope === "coders" ? coderDetails.error : undefined)
+    : isTeamView ? teamDashboard.error : efficiency.error;
+  const refetch = isLead ? () => { void leadDashboard.refetch(); if (scope === "coders" && coderOptions.length) void coderDetails.refetch(); }
+    : isTeamView ? teamDashboard.refetch : efficiency.refetch;
+  const loading = !summary || (isLead && (leadDashboard.isFetching && !leadDashboard.currentData
+    || scope === "coders" && coderOptions.length > 0 && !coderDetails.currentData));
   return (
     <section className="report-overview flex min-w-0 flex-col gap-4">
       <div>
         <h2 className="text-base font-semibold text-content-primary">{isTeamView ? "Team source comparison" : "Your source comparison"}</h2>
         <p className="text-sm text-content-muted">{view === "trends" ? "Production above CPD, with a shared timeline and consistent source colors." : "Daily production and capacity for the selected period. Switch to Trends to explore changes over time."}</p>
       </div>
-      {error ? <ErrorState message={getErrorMessage(error)} onRetry={refetch} /> : !summary
+      {isLead && <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        {scope === "coders" && <SearchableMultiSelect label="Coders" noun="coders"
+          options={coderOptions.map(coder => ({value: String(coder.userId), label: coder.name}))}
+          value={coderIds} onChange={setSelectedCoderIds} />}
+        <PerformanceTabs value={scope} onChange={setScope} compact
+          items={[{value: "qa", label: "QA"}, {value: "coders", label: "Coders"}]}
+          label="Reports data scope" />
+      </div>}
+      {error ? <ErrorState message={getErrorMessage(error)} onRetry={refetch} /> : loading || !summary
         ? <LoadingState label="Building daily overview…" /> : <>
           <div className="grid gap-3 sm:grid-cols-3">
             <CpdCard label="Kairon CPD" value={summary.kaironCpd} achievement={achievement(summary.kaironCpd, summary.targetCpd)} />
             <CpdCard label="Manual CPD" value={summary.manualCpd} achievement={achievement(summary.manualCpd, summary.targetCpd)} />
             <CpdCard label="Target CPD" value={summary.targetCpd} />
           </div>
-          <ReportGraphs sources={sources} from={from} to={to} teamView={isTeamView} stackedComparison overviewView={view} onViewChange={onViewChange} records={<DailyComparisonRecords sources={sources} from={from} to={to} />} />
+          <ReportGraphs sources={sources} from={from} to={to} teamView={isTeamView || isLead && scope === "coders"} stackedComparison overviewView={view} onViewChange={onViewChange} records={<DailyComparisonRecords sources={sources} from={from} to={to} />} />
         </>}
     </section>
   );

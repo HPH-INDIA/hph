@@ -52,7 +52,6 @@ export function AppShell() {
         <button className="app-nav-link mobile-account" type="button" disabled={isLoggingOut} onClick={handleLogout}><SidebarIcon name="logout" /><span>{isLoggingOut ? "Signing out…" : "Sign out"}</span></button>
       </nav>
       <div className="app-nav-bottom">
-        <div className="environment-note"><strong>Test environment</strong><span>Connected to existing Supabase data</span></div>
         {user && canConfigureMetricTheme(user) && <div className="sidebar-theme"><MetricThemeSettings key={user.id} userId={user.id} /></div>}
         <NavLink to="/account" className="app-profile"><span className="app-avatar">{user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}</span><span><strong>{user?.firstName} {user?.lastName}</strong><small>{user?.role.title}</small></span></NavLink>
         <button className="app-nav-link w-full" type="button" disabled={isLoggingOut} onClick={handleLogout}><SidebarIcon name="logout" /><span>{isLoggingOut ? "Signing out…" : "Sign out"}</span></button>
