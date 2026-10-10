@@ -3,7 +3,7 @@ import { displayNumber, displayCpd } from "@/utils/displayNumber";
 import { metricIdentity } from "@/components/ui/metricIdentity";
 import { useMemo, useState } from "react";
 import { getErrorMessage } from "@/api/apiError";
-import { useGetCodingDashboardQuery, useGetMyEfficiencyQuery, useGetLeadDashboardQuery, useGetLeadCoderPerformanceQuery } from "@/api/reportsApi";
+import { useGetCodingDashboardQuery, useGetMyEfficiencyQuery, useGetLeadDashboardQuery, useGetLeadCoderPerformanceQuery, useGetManagerDashboardQuery } from "@/api/reportsApi";
 import type { CodingDashboardCard, EfficiencySummary } from "@/api/types";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/StateViews";
 import { useAuth } from "@/features/auth/useAuth";
@@ -13,6 +13,7 @@ import { buildReportChartRows } from "./reportChartData";
 import { PaginationControls } from "@/components/ui/PaginationControls";
 import type { DailyEfficiency } from "@/api/types";
 import { SearchableMultiSelect } from "@/components/ui/SearchableMultiSelect";
+import { selectOverviewCards } from "./overviewSelection";
 import { PerformanceTabs } from "@/pages/performance/PerformanceTabs";
 
 function formatCpd(value: string | null) {
@@ -66,14 +67,31 @@ export function TeamPerformanceGraphs({ cards }: { cards: CodingDashboardCard[] 
 
 export function ReportsOverviewTab({ window, view = "trends", onViewChange }: { window: ManualReportWindow; view?: "records" | "trends"; onViewChange: (view: "records" | "trends") => void }) {
   const { user } = useAuth();
+  const isManager = user?.role.roleType === "manager";
   const isLead = user?.role.roleType === "lead";
   const isTeamView = ["super_admin", "admin", "manager"].includes(user?.role.roleType ?? "");
+  const [selectedTeams, setSelectedTeams] = useState<string[] | null>(null);
+  const [managerCoderIds, setManagerCoderIds] = useState<string[] | null>(null);
+  const [groups, setGroups] = useState({qa: true, coders: true});
   const [scope, setScope] = useState<"qa" | "coders">("qa");
   // null means all available coders; an empty selection means no coders.
   const [selectedCoderIds, setSelectedCoderIds] = useState<string[] | null>(null);
   const { fromDate: from, toDate: to } = window;
   const efficiency = useGetMyEfficiencyQuery({ from, to }, { skip: isTeamView || isLead });
   const teamDashboard = useGetCodingDashboardQuery({ from, to, includeDaily: true }, { skip: !isTeamView });
+  const managerRoster = useGetManagerDashboardQuery({ from, to }, { skip: !isManager });
+  const managerCards = useMemo(() => !isManager ? teamDashboard.currentData
+    : teamDashboard.currentData && managerRoster.currentData
+      ? selectOverviewCards(teamDashboard.currentData, managerRoster.currentData.members, selectedTeams, managerCoderIds, groups)
+      : undefined,
+    [isManager, teamDashboard.currentData, managerRoster.currentData, selectedTeams, managerCoderIds, groups]);
+  const teamOptions = useMemo(() => [
+    ...(managerRoster.currentData?.leadOptions ?? []).map(lead => ({value: `lead-${lead.userId}`, label: lead.name})),
+    ...(managerRoster.currentData?.coderOptions.some(coder => coder.leadId === null) ? [{value: "unassigned", label: "Unassigned"}] : []),
+  ], [managerRoster.currentData]);
+  const managerCoderOptions = useMemo(() => (managerRoster.currentData?.coderOptions ?? [])
+    .filter(coder => selectedTeams === null || selectedTeams.includes(coder.leadId === null ? "unassigned" : `lead-${coder.leadId}`))
+    .map(coder => ({value: String(coder.userId), label: coder.name})), [managerRoster.currentData, selectedTeams]);
   const leadDashboard = useGetLeadDashboardQuery({ from, to }, { skip: !isLead });
   const coderOptions = useMemo(() => leadDashboard.currentData?.coderOptions ?? [], [leadDashboard.currentData]);
   const coderDetails = useGetLeadCoderPerformanceQuery({ from, to, coders: coderOptions },
@@ -86,18 +104,18 @@ export function ReportsOverviewTab({ window, view = "trends", onViewChange }: { 
     ? scope === "qa" ? leadDashboard.currentData?.qa.efficiency
       : selectedCoderIds === null ? leadDashboard.currentData?.coders.efficiency
         : metricTotals(coderSources.flat())
-    : isTeamView ? teamDashboard.currentData ? aggregateTeamOverview(teamDashboard.currentData, from, to) : undefined
+    : isTeamView ? managerCards ? aggregateTeamOverview(managerCards, from, to) : undefined
       : efficiency.currentData,
-    [isLead, scope, leadDashboard.currentData, selectedCoderIds, coderSources, isTeamView, teamDashboard.currentData, efficiency.currentData, from, to]);
+    [isLead, scope, leadDashboard.currentData, selectedCoderIds, coderSources, isTeamView, managerCards, efficiency.currentData, from, to]);
   const sources = useMemo(() => isLead
     ? scope === "coders" ? coderSources : [leadDashboard.currentData?.qa.efficiency.daily ?? []]
-    : isTeamView ? (teamDashboard.currentData ?? []).map(card => card.efficiency.daily)
+    : isTeamView ? (managerCards ?? []).map(card => card.efficiency.daily)
       : [efficiency.currentData?.daily ?? []],
-    [isLead, scope, coderSources, leadDashboard.currentData, isTeamView, teamDashboard.currentData, efficiency.currentData]);
+    [isLead, scope, coderSources, leadDashboard.currentData, isTeamView, managerCards, efficiency.currentData]);
   const error = isLead ? leadDashboard.error || (scope === "coders" ? coderDetails.error : undefined)
-    : isTeamView ? teamDashboard.error : efficiency.error;
+    : isTeamView ? teamDashboard.error || (isManager ? managerRoster.error : undefined) : efficiency.error;
   const refetch = isLead ? () => { void leadDashboard.refetch(); if (scope === "coders" && coderOptions.length) void coderDetails.refetch(); }
-    : isTeamView ? teamDashboard.refetch : efficiency.refetch;
+    : isTeamView ? () => { void teamDashboard.refetch(); if (isManager) void managerRoster.refetch(); } : efficiency.refetch;
   const loading = !summary || (isLead && (leadDashboard.isFetching && !leadDashboard.currentData
     || scope === "coders" && coderOptions.length > 0 && !coderDetails.currentData));
   return (
@@ -106,6 +124,20 @@ export function ReportsOverviewTab({ window, view = "trends", onViewChange }: { 
         <h2 className="text-base font-semibold text-content-primary">{isTeamView ? "Team source comparison" : "Your source comparison"}</h2>
         <p className="text-sm text-content-muted">{view === "trends" ? "Production above CPD, with a shared timeline and consistent source colors." : "Daily production and capacity for the selected period. Switch to Trends to explore changes over time."}</p>
       </div>
+      {isManager && <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <SearchableMultiSelect label="Lead / team" noun="teams" options={teamOptions}
+          value={selectedTeams ?? teamOptions.map(option => option.value)}
+          onChange={teams => { setSelectedTeams(teams); setManagerCoderIds(null); }} />
+        {groups.coders && <SearchableMultiSelect label="Coders" noun="coders" options={managerCoderOptions}
+          value={managerCoderIds ?? managerCoderOptions.map(option => option.value)} onChange={setManagerCoderIds} />}
+        <div role="group" aria-label="Reports data groups" className="flex items-center gap-1">
+          {(["qa", "coders"] as const).map(group => <button key={group} type="button" aria-pressed={groups[group]}
+            onClick={() => setGroups(current => ({...current, [group]: !current[group]}))}
+            className={`min-h-10 rounded-md border px-3 py-2 text-sm font-medium ${groups[group] ? "border-brand-200 bg-brand-50 text-brand-700" : "border-transparent text-content-secondary hover:bg-surface-muted"}`}>
+            {group === "qa" ? "QA" : "Coders"}
+          </button>)}
+        </div>
+      </div>}
       {isLead && <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
         {scope === "coders" && <SearchableMultiSelect label="Coders" noun="coders"
           options={coderOptions.map(coder => ({value: String(coder.userId), label: coder.name}))}
